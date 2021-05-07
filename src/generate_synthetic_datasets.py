@@ -3,7 +3,9 @@ import random
 import argparse
 import networkx as nx
 
-from utils.io import writePickleNetworkx
+from tqdm import tqdm
+
+from utils.io import *
 
 
 
@@ -48,7 +50,7 @@ def generateGraphs(N, model, *args, **kwargs):
 	'''
 	dataset = []
 	# Generate N total amount of graphs
-	for i in range(N):
+	for i in tqdm(range(N)):
 		# Generate erdos renyi graphs
 		if model == 'erdos_renyi':
 			dataset.append(nx.erdos_renyi_graph(
@@ -68,7 +70,7 @@ def main():
 		dataset = generateGraphs(args.N, args.model, n=args.n, m=args.m)
 		filename = f"../data/synthetic/{args.model}/n{'-'.join(map(str, args.n))}_m{'-'.join(map(str, args.m))}_{int(time.time())}.pkl"
 	# Store the dataset into memory
-	writePickleNetworkx(dataset, filename)
+	writePickle(dataset, filename)
 	
 
 if __name__ == '__main__':
