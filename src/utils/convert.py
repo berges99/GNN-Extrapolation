@@ -37,3 +37,15 @@ def fromNetworkx(dataset, add_degree=True):
         	torch_g.x = torch.Tensor(np.array(list(dict(g.degree()).values()))[:, None])
         torch_dataset.append(torch_g)
     return torch_dataset
+
+
+def addLabels(dataset, labels):
+    '''
+
+
+    '''
+    torch_dataset = []
+    for i, g in enumerate(dataset):
+        g.y = torch.Tensor(np.array(labels[i])[:, None])
+        torch_dataset.append(g)
+    return torch_dataset

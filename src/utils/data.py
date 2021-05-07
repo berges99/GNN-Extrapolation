@@ -2,7 +2,7 @@ import numpy as np
 
 
 
-def splitData(dataset, outputs, train_size=0.8, seed=None):
+def splitData(dataset, outputs=None, train_size=0.8, seed=None):
 	'''
 	Generate random train/test splitting.
 
@@ -21,9 +21,15 @@ def splitData(dataset, outputs, train_size=0.8, seed=None):
 	shuffle = np.arange(n)
 	np.random.shuffle(shuffle)
 	train_idxs, test_idxs = shuffle[:int(train_size * n)], shuffle[int(train_size * n):]
-	return (
-		np.array(dataset)[train_idxs], 
-		np.array(dataset)[test_idxs], 
-		np.array(outputs)[train_idxs], 
-		np.array(outputs)[test_idxs]
-	)
+	if outputs:
+		return (
+			np.array(dataset)[train_idxs], 
+			np.array(dataset)[test_idxs], 
+			np.array(outputs)[train_idxs], 
+			np.array(outputs)[test_idxs]
+		)
+	else:
+		return (
+			np.array(dataset)[train_idxs], 
+			np.array(dataset)[test_idxs]
+		)
