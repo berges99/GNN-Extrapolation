@@ -1,8 +1,11 @@
+import torch
 import numpy as np
 
+from torch_geometric.data import Data
 
 
-def splitData(dataset, outputs=None, train_size=0.8, seed=None):
+
+def splitData(dataset, outputs=None, train_size=0.9, seed=None):
 	'''
 	Generate random train/test splitting.
 
@@ -23,13 +26,14 @@ def splitData(dataset, outputs=None, train_size=0.8, seed=None):
 	train_idxs, test_idxs = shuffle[:int(train_size * n)], shuffle[int(train_size * n):]
 	if outputs:
 		return (
-			np.array(dataset)[train_idxs], 
-			np.array(dataset)[test_idxs], 
-			np.array(outputs)[train_idxs], 
-			np.array(outputs)[test_idxs]
+			np.array(dataset, dtype=object)[train_idxs], 
+			np.array(dataset, dtype=object)[test_idxs], 
+			np.array(outputs, dtype=object)[train_idxs], 
+			np.array(outputs, dtype=object)[test_idxs]
 		)
 	else:
 		return (
-			np.array(dataset)[train_idxs], 
-			np.array(dataset)[test_idxs]
+			# ('edge_index', 'x', 'y')
+			[Data(x=X[1][1], edge_index=X[0][1], y=X[2][1]) for X in np.array(dataset, dtype=object)[train_idxs]],
+			[Data(x=X[1][1], edge_index=X[0][1], y=X[2][1]) for X in np.array(dataset, dtype=object)[test_idxs]]
 		)

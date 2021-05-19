@@ -4,3 +4,4 @@ data/datasets/
 .DS_Store
 notebooks/
 *.ipynb
+**/*.pkl

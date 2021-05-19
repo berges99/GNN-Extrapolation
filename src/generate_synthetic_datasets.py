@@ -45,9 +45,20 @@ def uniformSample(values):
 
 def generateGraphs(N, model, *args, **kwargs):
 	'''
-	TBD
+	Generate a synthetic dataset with a specific algorithm.
+	
+	Parameters:
+		- N: (int) Number of graphs to generate.
+		- model: (str) Algorithm for generating the data.
+		- (...) extra parameters depending on the chosen model.
+
+	Returns:
+		- (list<nx.Graph>) List with the generated graphs.
 
 	'''
+	print()
+	print('-' * 30)
+	print('Generating synthetic data...')
 	dataset = []
 	# Generate N total amount of graphs
 	for i in tqdm(range(N)):
@@ -65,10 +76,12 @@ def main():
 	args = readArguments()
 	if args.model == 'erdos_renyi':
 		dataset = generateGraphs(args.N, args.model, n=args.n, p=args.p)
-		filename = f"../data/synthetic/{args.model}/n{'-'.join(map(str, args.n))}_p{'-'.join(map(str, args.p))}_{int(time.time())}.pkl"
+		filename = f"../data/synthetic/{args.model}/raw/n{'-'.join(map(str, args.n))}" \
+				   f"_p{'-'.join(map(str, args.p))}_{int(time.time())}.pkl"
 	else: #elif args.model == 'preferential_attachment':
 		dataset = generateGraphs(args.N, args.model, n=args.n, m=args.m)
-		filename = f"../data/synthetic/{args.model}/n{'-'.join(map(str, args.n))}_m{'-'.join(map(str, args.m))}_{int(time.time())}.pkl"
+		filename = f"../data/synthetic/{args.model}/raw/n{'-'.join(map(str, args.n))}" \
+				   f"_m{'-'.join(map(str, args.m))}_{int(time.time())}.pkl"
 	# Store the dataset into memory
 	writePickle(dataset, filename)
 	

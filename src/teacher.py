@@ -1,3 +1,4 @@
+import time
 import torch
 import argparse
 import numpy as np
@@ -23,7 +24,7 @@ def readArguments():
     parser.add_argument(
     	'--filename', '-f', type=str, default='', help='Filename of the dataset to be used.')
     parser.add_argument(
-    	'--path', '-p', type=str, default='../data/synthetic/erdos_renyi', help='Default path to the data.')
+    	'--path', '-p', type=str, default='../data/synthetic/preferential_attachment', help='Default path to the data.')
     return parser.parse_args()
 
 
@@ -35,7 +36,19 @@ def initWeights(m):
 
 
 def test(model, loader):
-	''''''
+	'''
+	Predict on unseen data.
+
+	Parameters:
+		- model: (models.GINRegressor.GIN)
+		- loader: (torch_geometric.data.dataloader.DataLoader) Torch data loader for testing.
+
+	Returns:
+		- (np.ndarray) Predictions of the model for all the test nodes.
+	'''
+	print()
+	print('-' * 30)
+	print('Generating outputs for all nodes in the dataset...')
 	model.eval()
 	predictions = []
 	for data in tqdm(loader):
@@ -48,9 +61,9 @@ def test(model, loader):
 
 def main():
 	args = readArguments()
-	filename = args.filename or getLatestVersion(args.path)
+	filename = args.filename or getLatestVersion(f'{args.path}/raw')
 	# Read the dataset and convert it to torch_geometric.data
-	networkx_dataset = readPickle(f'{args.path}/{filename}')
+	networkx_dataset = readPickle(f'{args.path}/raw/{filename}')
 	torch_dataset = fromNetworkx(networkx_dataset, add_degree=True)
 	torch_dataset_loader = DataLoader(torch_dataset, batch_size=1)
 	# Init the model
@@ -58,8 +71,7 @@ def main():
 	model.apply(initWeights)
 	# Make the model predict the regression outputs and save the results
 	predictions = test(model, torch_dataset_loader)
-	writePickle(predictions, f"{args.path}/{filename.rstrip('.pkl')}_teacher.pkl")
-
+	writePickle(predictions, f"{args.path}/teacher_outputs/{filename.rstrip('.pkl')}_{int(time.time())}.pkl")
 
 
 if __name__ == '__main__':

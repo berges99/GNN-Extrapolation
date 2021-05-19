@@ -1,5 +1,4 @@
 import os
-import torch
 import pickle
 import numpy as np
 
@@ -17,8 +16,16 @@ def readPickle(filename):
 		return pickle.load(f)
 
 
-def getLatestVersion(filepath, extension='.pkl'):
+def getLatestVersion(filepath, filename=None, extension='.pkl'):
 	'''Auxiliary function that returns the latest created version at a given path.'''
-	versions = [version for version in os.listdir(filepath) if version.endswith(extension) and 'teacher' not in version]
+	versions = [version for version in os.listdir(filepath) if version.endswith(extension)]
+	if filename:
+		versions = [version for version in versions if version.startswith(filename)]
 	ts = np.array([int(version.rstrip(extension).split('_')[-1]) for version in versions])
 	return versions[np.argmax(ts)]
+
+
+def writeHTML(body, filename):
+	'''Auxiliary function that writes an HTML file into memory.'''
+	with open(filename, 'w') as f:
+		f.write(body)

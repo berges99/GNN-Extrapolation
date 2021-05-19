@@ -96,9 +96,10 @@ def computeRootedTrees(adj_list, depth=3):
         for d in range(depth):
             offset = 0
             for l in findLeaves(T):
-                substring = '{' + '}{'.join([str(n) for n in adj_list[l[0]]]) + '}'
-                T = T[:offset + l[1][1] - 1] + substring + T[offset + l[1][1] - 1:]
-                offset += len(substring)
+                if len(adj_list[l[0]]):
+                    substring = '{' + '}{'.join([str(n) for n in adj_list[l[0]]]) + '}'
+                    T = T[:offset + l[1][1] - 1] + substring + T[offset + l[1][1] - 1:]
+                    offset += len(substring)
         rooted_trees[i] = re.sub(r"\d+", 'x', T)
     return rooted_trees
 
@@ -151,6 +152,9 @@ def computeDatasetRootedTrees(adj_list_dataset, depth=3, parallel=False):
     Returns:
         - (list<list<str>>) All rooted trees for every node of every graph in the input dataset.
     '''
+    print()
+    print('-' * 30)
+    print('Computing rooted trees for all nodes in the dataset...')
     if parallel:
         dataset_rooted_trees = Parallel(n_jobs=NUM_CORES)(delayed(computeRootedTrees)(adj_list) for adj_list in adj_list_dataset)
     else:
