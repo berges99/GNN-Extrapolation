@@ -98,12 +98,12 @@ def baseline(dataset_rooted_trees_flatten, regression_outputs_flatten, dist_matr
 		# Check if we want exact or fuzzy matching
 		if smoothed:
 			min_idxs = np.where(dist_matrix[:, test_node_idx] == min_dist)[0]
-			prediction = np.mean(np.array(regression_outputs_flatten)[min_idxs])
+			prediction = np.mean(regression_outputs_flatten[min_idxs])
 			predictions.append(prediction)
 		else:
 			if min_dist == 0:
 				min_idxs = np.where(dist_matrix[:, test_node_idx] == min_dist)[0]
-				prediction = np.mean(np.array(regression_outputs_flatten)[min_idxs])
+				prediction = np.mean(regression_outputs_flatten[min_idxs])
 				predictions.append(prediction)
 			else:
 				predictions.append(0)
@@ -151,7 +151,7 @@ def main():
 	regression_outputs_filename = getLatestVersion(
 		f'{args.path}/teacher_outputs', filename=filename.rstrip('.pkl'))
 	regression_outputs = readPickle(f'{args.path}/teacher_outputs/{regression_outputs_filename}')
-	regression_outputs_flatten = [item for sublist in regression_outputs for item in sublist]
+	regression_outputs_flatten = np.array([item for sublist in regression_outputs for item in sublist])
 	# Generate random shuffle
 	train_idxs, test_idxs = generateShuffle(len(dataset_rooted_trees), sort=True)
 	
@@ -164,8 +164,7 @@ def main():
 	print(test_node_idxs, predictions)
 
 	# Evaluate the performance
-	total_error, avg_G_error, avg_n_error = evaluatePerformance(
-		predictions, np.array(regression_outputs_flatten)[test_node_idxs])
+	total_error, avg_G_error, avg_n_error = evaluatePerformance(predictions, regression_outputs_flatten[test_node_idxs])
 	print(total_error, avg_G_error, avg_n_error)
 	
 	

@@ -55,13 +55,17 @@ def main():
 	# Init optimizer
 	optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 	# Train the model
-	module.train(model, optimizer, train_loader, epochs=1, device=device)
+	module.train(model, optimizer, train_loader, epochs=3, device=device)
 	# Predict on unseen data
 	predictions = module.test(model, test_loader, device)
-	print(predictions)
-	# # Evaluate the performance
-	# total_error, avg_G_error, avg_n_error = evaluatePerformance(predictions, [G.y.numpy() for G in X_test])
-	# print(total_error, avg_G_error, avg_n_error)
+	# Get real values and flatten all values
+	real_values = [G.y.numpy() for G in X_test]
+	real_values = [item for sublist in real_values for item in sublist]
+	predictions = [item for sublist in predictions for item in sublist]
+
+	# Evaluate the performance
+	total_error, avg_G_error, avg_n_error = evaluatePerformance(predictions, real_values)
+	print(total_error, avg_G_error, avg_n_error)
 
 
 if __name__ == '__main__':

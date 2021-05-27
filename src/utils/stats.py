@@ -36,19 +36,6 @@ def evaluatePerformance(predicted_values, real_values):
 	return total_error, avg_G_error, avg_n_error
 
 
-def plotPresenceDistribution(filename=None):
-	'''
-	Plots the distribution of appearances of seen trees in the given dataset.
-
-	Parameters:
-		- 
-
-	Returns:
-		- (str) Filepath of the resulting figure.
-	'''
-	pass
-
-
 def computeStats(seen_trees, filepath, filename, unseen_trees=None):
 	'''
 	Compute simple dataset stats (mainly trees presence and counts).
