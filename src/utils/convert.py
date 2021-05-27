@@ -17,7 +17,7 @@ def getAdjacencyList(G):
 	return adj_list
 
 
-def fromNetworkx(dataset, add_degree=True):
+def fromNetworkx2Torch(dataset, add_degree=True):
     '''
     Auxiliary function that converts a networkx dataset to torch_geometric.data.
 
@@ -49,3 +49,7 @@ def addLabels(dataset, labels):
         g.y = torch.Tensor(np.array(labels[i])[:, None])
         torch_dataset.append(g)
     return torch_dataset
+
+
+def fromAPTED2NTK():
+    pass

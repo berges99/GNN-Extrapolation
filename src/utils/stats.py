@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 from utils.io import *
+from utils.plots import *
 
 
 
@@ -28,12 +29,10 @@ def evaluatePerformance(predicted_values, real_values):
 	assert len(predicted_values) == len(real_values), 'Prediction dimensions do not match!'
 	# For all the graphs in the test collection
 	total_error = 0
-	for i, G in enumerate(tqdm(real_values)):
-		# For all the nodes
-		for j, n in enumerate(G):
-			total_error += np.abs(predicted_values[i][j] - real_values[i][j])
-	avg_G_error = total_error / len(predicted_values)
-	avg_n_error = avg_G_error / len(predicted_values[0])
+	for i, n in enumerate(tqdm(real_values)):
+		total_error += np.abs(predicted_values[i] - real_values[i])
+	avg_G_error = total_error / (len(predicted_values) / 30)
+	avg_n_error = avg_G_error / 30
 	return total_error, avg_G_error, avg_n_error
 
 
@@ -50,7 +49,7 @@ def plotPresenceDistribution(filename=None):
 	pass
 
 
-def computeStats(seen_trees, filename, unseen_trees=None):
+def computeStats(seen_trees, filepath, filename, unseen_trees=None):
 	'''
 	Compute simple dataset stats (mainly trees presence and counts).
 
@@ -62,21 +61,24 @@ def computeStats(seen_trees, filename, unseen_trees=None):
 	Returns:
 		- (str) HTML with the parsed results.
 	'''
+	method, params = parseFilename(filepath, filename)
+	N = params['N']
+	params = {k: v for k, v in params.items() if k != 'N'}
 
 	html = f"""<html>
 	<body>
 	<h1 style="text-align:center;">Dataset Statistics</h1>
-	<p style="text-align:center;"><b>Dataset: </b>{filename}</p>
+	<p style="text-align:center;"><b>Dataset: </b>{filepath + filename}</p>
 
 	<ul>
-		<li><b>Number of graphs: </b>{filename}</li>
-		<li><b>Algorithm: </b>{filename}</li>
-		<li><b>Params: </b>{filename}</li>
-		<li><b>Tree depth: </b>{filename}</li>
+		<li><b>Number of graphs: </b>{N}</li>
+		<li><b>Algorithm: </b>{method}</li>
+		<li><b>Params: </b>{params}</li>
+		<li><b>Tree depth: </b>3</li>
 	</ul>
 
 	</body>
 	</html>"""
 
 	# Save the HTML
-	writeHTML(html, f'{filename}')
+	writeHTML(html, f"{'/'.join([x for x in filepath.split('/')[:-1]])}/stats/{filename}.html")
