@@ -2,5 +2,4 @@ __pycache__/
 data/datasets/
 .ipynb_checkpoints
 .DS_Store
-notebooks/
 **/*.pkl
