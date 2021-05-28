@@ -5,8 +5,6 @@ import numpy as np
 import pandas as pd
 import networkx as nx
 
-from collections import defaultdict
-
 from utils.io import *
 from utils.data import *
 from utils.stats import *
@@ -34,55 +32,31 @@ def readArguments():
     return parser.parse_args()
 
 
-def train(X_train, y_train):
+def baseline(dataset_rooted_trees_flatten, 
+		     regression_outputs_flatten, 
+		     dist_matrix, 
+		     train_idxs, 
+		     test_idxs,
+		     aggregator='mean', 
+		     smoothed=True):
 	'''
+	Implementation of the baseline model. It gives predictions for the test data based on rooted
+	trees similarities.
 
+	Parameters:
+		- dataset_rooted_trees_flatten: (np.array) List with all the flattened rooted trees in the dataset.
+		- regression_outputs_flatten: (np.array) List with all the flattened outputs for all the nodes in the dataset.
+		- dist_matrix: (np.ndarray) Pairwise distance matrix between all nodes in the dataset.
+		- train_idxs: (np.array) Graphs to be used as train data.
+		- test_idxs: (np.array) Graphs to be used as test data.
+		- aggregator: (str) Aggregator to use when multiple rooted trees are at the same distance.
+		- smoothed: (bool) Whether to use closest trees for the predictions.
 
+	Returns:
+		- (np.array) Flattened indices of the predicted values (withing the main dataset).
+		- (np.array) Flattened predictions for the test data.
 	'''
-	print()
-	print('-' * 30)
-	print(f'Hashing seen trees in the training dataset... ' \
-		  f'({len(X_train)} graphs, i.e. {len(X_train) * len(X_train[0])} nodes)')
-	seen_trees = defaultdict(list)
-	# For all the graphs in the dataset
-	for i, G in enumerate(tqdm(X_train)):
-		# For all the trees in the graph
-		for j, T in enumerate(G):
-			seen_trees[T].append(y_train[i][j])
-	return seen_trees
-
-
-def test(seen_trees, X_test, agg='mean'):
-	'''
-
-	TBD
-
-
-	'''
-	print()
-	print('-' * 30)
-	print('Utilizing seen trees in the dataset to make predictions for the new data...')
-	# Determine the aggregator function (TBC)
-	aggregator = np.mean if agg == 'mean' else np.mean
-	predictions = []
-	# For all the graphs in the test data
-	for i, G in enumerate(tqdm(X_test)):
-		# For all the trees in the graph
-		prediction = []
-		for j, T in enumerate(G):
-			# Check if we had seen the tree
-			if T in seen_trees:
-				prediction.append(aggregator(seen_trees[T]))
-			else:
-				prediction.append(0)
-		predictions.append(prediction)
-	return predictions
-
-
-def baseline(dataset_rooted_trees_flatten, regression_outputs_flatten, dist_matrix, train_idxs, test_idxs, smoothed=True):
-	'''
-
-	'''
+	aggregator = np.mean if aggregator == 'mean' else np.mean # To be continued
 	# Number of nodes per graph
 	n = 30
 	# Set test rows to infinity, such that we cannot use them for the predictions
@@ -96,18 +70,13 @@ def baseline(dataset_rooted_trees_flatten, regression_outputs_flatten, dist_matr
 	for test_node_idx in test_node_idxs:
 		min_dist = np.min(dist_matrix[:, test_node_idx])
 		# Check if we want exact or fuzzy matching
-		if smoothed:
+		if smoothed or min_dist == 0:
 			min_idxs = np.where(dist_matrix[:, test_node_idx] == min_dist)[0]
-			prediction = np.mean(regression_outputs_flatten[min_idxs])
+			prediction = aggregator(regression_outputs_flatten[min_idxs])
 			predictions.append(prediction)
 		else:
-			if min_dist == 0:
-				min_idxs = np.where(dist_matrix[:, test_node_idx] == min_dist)[0]
-				prediction = np.mean(regression_outputs_flatten[min_idxs])
-				predictions.append(prediction)
-			else:
-				predictions.append(0)
-	return test_node_idxs, predictions
+			predictions.append(0)
+	return np.array(test_node_idxs), np.array(predictions)
 
 
 def main():
@@ -129,15 +98,8 @@ def main():
 	##########
 	# Compute the pairwise distance matrix if necessary (relabel if indicated)
 	if os.path.isfile(f'{args.path}/dist_matrices/{filename}'):
-		# unique_trees, dist_matrix = readPickle(f'{args.path}/dist_matrices/{filename}')
 		dataset_rooted_trees_flatten, dist_matrix = readPickle(f'{args.path}/dist_matrices/{filename}')
 	else:
-		# unique_trees = list(set([
-		# 	re.sub(r"\d+", 'x', item) if args.relabel else item
-		# 	for sublist in dataset_rooted_trees for item in sublist
-		# ]))
-		# dist_matrix = computeDistMatrix(unique_trees, method=args.method, nystrom=False, parallel=True)
-		# writePickle((unique_trees, dist_matrix), f'{args.path}/dist_matrices/{filename}')
 		dataset_rooted_trees_flatten = [
 			re.sub(r"\d+", 'x', item) if args.relabel else item
 			for sublist in dataset_rooted_trees for item in sublist
@@ -146,6 +108,14 @@ def main():
 			dataset_rooted_trees_flatten, method=args.method, nystrom=False, parallel=True)
 		writePickle((dataset_rooted_trees_flatten, dist_matrix), f'{args.path}/dist_matrices/{filename}')
 	
+
+
+
+	computeDatasetStats(networkx_dataset, dataset_rooted_trees_flatten, dist_matrix, filepath=f'{args.path}/rooted_trees', filename=filename, sample=1)
+
+
+
+
 	##########
 	# Read the teacher outputs of the dataset and split the data
 	regression_outputs_filename = getLatestVersion(
@@ -157,12 +127,11 @@ def main():
 	
 	
 
-
+	##########
+	# Predict on test data with the baseline method
 	test_node_idxs, predictions = baseline(
 		dataset_rooted_trees_flatten, regression_outputs_flatten, dist_matrix, train_idxs, test_idxs, smoothed=True)
-
 	print(test_node_idxs, predictions)
-
 	# Evaluate the performance
 	total_error, avg_G_error, avg_n_error = evaluatePerformance(predictions, regression_outputs_flatten[test_node_idxs])
 	print(total_error, avg_G_error, avg_n_error)
@@ -171,16 +140,8 @@ def main():
 
 
 
-	#computeStats(0, f'{args.path}/rooted_trees', filename)
 	
-
-
-	##########
-	# # Check all seen trees in the dataset
-	#X_train, X_test, y_train, y_test = splitData(dataset_rooted_trees, regression_outputs)
-	# seen_trees = train(X_train, y_train)
-	# # Use the seen trees to predict on the test data
-	# predictions = test(seen_trees, X_test)	
+		
 	
 
 if __name__ == '__main__':

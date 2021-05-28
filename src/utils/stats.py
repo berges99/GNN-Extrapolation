@@ -5,6 +5,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 
 from tqdm import tqdm
+from collections import defaultdict, Counter
 
 from utils.io import *
 from utils.plots import *
@@ -36,26 +37,65 @@ def evaluatePerformance(predicted_values, real_values):
 	return total_error, avg_G_error, avg_n_error
 
 
-def computeStats(seen_trees, filepath, filename, unseen_trees=None):
+##########
+
+
+def computeTreePresence(dataset_rooted_trees_flatten):
+	'''Auxiliary function that computes the tree presence distribution in the dataset.'''
+	return Counter(dataset_rooted_trees_flatten)
+
+
+def computeDatasetStats(networkx_dataset,
+						dataset_rooted_trees_flatten,
+						dist_matrix,
+					    filepath, 
+					    filename,
+					    sample=1):
 	'''
-	Compute simple dataset stats (mainly trees presence and counts).
+	Compute basic dataset stats and stores the result in pretty HTML format.
 
 	Parameters:
-		- seen_trees: (dict<str, list>) Dictionary with the seen trees.
-		- filename: (str) String with the path where to store the stats (None otherwise).
-		- unseen_trees: (dict<str, list>) Dictionary with the unseen/test trees (None otherwise).
+		- networkx_dataset: (list<nx.Graph>) List with all the networkx graphs in the dataset.
+		- dataset_rooted_trees_flatten: (list<str>) List with all the rooted trees in the dataset.
+		- dist_matrix: (np.ndarray) Pairwise distance matrix between all nodes in the dataset.
+		- filepath: (str) Full relative path to the dataset.
+		- filename: (str) Filename of the dataset.
+		- sample: (float) % of graphs in the dataset to use for basic stats computation.
 
 	Returns:
-		- (str) HTML with the parsed results.
+		- None
 	'''
+	stats_filepath = f"{'/'.join([x for x in filepath.split('/')[:-1]])}/stats"
+	###
+	# Info from the name
 	method, params = parseFilename(filepath, filename)
 	N = params['N']
 	params = {k: v for k, v in params.items() if k != 'N'}
 
+	###
+	# Compute basic networkx stats
+	num_graphs_stats = int(sample * len(networkx_dataset))
+	graphs_stats = np.random.choice(np.arange(len(networkx_dataset)), size=num_graphs_stats)
+	# TBD
+
+	###
+	# Tree presence
+	tree_counts = computeTreePresence(dataset_rooted_trees_flatten)
+	distribution = sorted(list(tree_counts.values()), key=lambda x: -x)
+	distribution_filename= f"{stats_filepath}/images/distributions/{filename.rstrip('.pkl')}.png"
+	distribution_filename_relative = f"images/distributions/{filename.rstrip('.pkl')}.png"
+	plotDistribution(distribution, figname=distribution_filename, title='Pairwise distances.')
+
+	###
+	# Plot distance matrix
+	heatmap_filename= f"{stats_filepath}/images/heatmaps/{filename.rstrip('.pkl')}.png"
+	heatmap_filename_relative = f"images/heatmaps/{filename.rstrip('.pkl')}.png"
+	plotHeatmap(dist_matrix, figname=heatmap_filename, title='Distribution of rooted trees.')
+
 	html = f"""<html>
 	<body>
 	<h1 style="text-align:center;">Dataset Statistics</h1>
-	<p style="text-align:center;"><b>Dataset: </b>{filepath + filename}</p>
+	<p style="text-align:center;"><b>Dataset: </b>{filepath}/{filename}</p>
 
 	<ul>
 		<li><b>Number of graphs: </b>{N}</li>
@@ -64,8 +104,20 @@ def computeStats(seen_trees, filepath, filename, unseen_trees=None):
 		<li><b>Tree depth: </b>3</li>
 	</ul>
 
+	<h2 style="text-align:center;">Basic stats</h2>
+
+	<h2 style="text-align:center;">Tree presence</h2>
+	<p style="text-align:center;">
+	<img src={distribution_filename_relative} alt="dist_mat" class="center" height="720" width="1080"></img>
+	</p>
+
+	<h2 style="text-align:center;">Pairwise distance matrix</h2>
+	<p style="text-align:center;">
+	<img src={heatmap_filename_relative} alt="dist_mat" class="center" height="720" width="720"></img>
+	</p>
+
 	</body>
 	</html>"""
 
 	# Save the HTML
-	writeHTML(html, f"{'/'.join([x for x in filepath.split('/')[:-1]])}/stats/{filename}.html")
+	writeHTML(html, f"{stats_filepath}/{filename.rstrip('.pkl')}.html")
