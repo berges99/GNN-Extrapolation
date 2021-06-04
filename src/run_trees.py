@@ -94,7 +94,7 @@ def main():
 		dataset_rooted_trees = computeDatasetRootedTrees(
 			adj_list_dataset, method=args.method, depth=args.depth, parallel=False)
 		writePickle(dataset_rooted_trees, f'{args.path}/rooted_trees/{filename}')
-
+	
 	##########
 	# Compute the pairwise distance matrix if necessary (relabel if indicated)
 	if os.path.isfile(f'{args.path}/dist_matrices/{filename}'):
@@ -108,13 +108,9 @@ def main():
 			dataset_rooted_trees_flatten, method=args.method, nystrom=False, parallel=True)
 		writePickle((dataset_rooted_trees_flatten, dist_matrix), f'{args.path}/dist_matrices/{filename}')
 	
-
-
-
+	##########
+	# Compute and store basic dataset stats
 	computeDatasetStats(networkx_dataset, dataset_rooted_trees_flatten, dist_matrix, filepath=f'{args.path}/rooted_trees', filename=filename, sample=1)
-
-
-
 
 	##########
 	# Read the teacher outputs of the dataset and split the data

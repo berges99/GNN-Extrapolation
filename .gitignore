@@ -3,3 +3,4 @@ data/datasets/
 .ipynb_checkpoints
 .DS_Store
 **/*.pkl
+.pdf
