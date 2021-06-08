@@ -2,20 +2,36 @@ import os
 import pickle
 import numpy as np
 
+from pathlib import Path
+from functools import wraps
 
 
+
+def buildPath(f):
+	'''Auxiliary wrapper that explicitly builds the parent path of a file.'''
+	@wraps(f)
+	def wrapper(*args, **kwargs):
+		filepath = '/'.join(kwargs['filename'].split('/')[:-1])
+		Path(filepath).mkdir(parents=True, exist_ok=True)
+		return f(*args, **kwargs)
+	return wrapper
+
+
+@buildPath
 def writeHTML(body, filename):
 	'''Auxiliary function that writes an HTML file into memory.'''
 	with open(filename, 'w') as f:
 		f.write(body)
 
 
+@buildPath
 def writeNumpy(arrays, filename):
 	'''Auxiliary function that writes an np file into memory.'''
 	with open(filename, 'wb') as f:
 		f.write(arrays)
 
 
+@buildPath
 def writePickle(dataset, filename):
 	'''Auxiliary function that writes a list of networkx graphs as serialized python objects.'''
 	with open(filename, 'wb') as f:
