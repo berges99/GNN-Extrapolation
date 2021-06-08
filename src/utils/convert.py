@@ -35,14 +35,23 @@ def fromNetworkx2Torch(dataset, add_degree=True):
         # Add the node degrees as node features
         if add_degree:
         	torch_g.x = torch.Tensor(np.array(list(dict(g.degree()).values()))[:, None])
+        # Otherwise just add a 1.
+        else:
+            torch_g.x = torch.ones((1, torch_g.size(0)))
         torch_dataset.append(torch_g)
     return torch_dataset
 
 
 def addLabels(dataset, labels):
     '''
+    Add labels to a pytorch dataset.
 
+    Parameters:
+        - dataset: (list<torch_geometric.data>) Dataset to add the labels to.
+        - labels: (list<list<float>>) Labels of the dataset.
 
+    Returns:
+        - (list<torch_geometric.data>) Final dataset.
     '''
     torch_dataset = []
     for i, g in enumerate(dataset):
