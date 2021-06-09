@@ -39,7 +39,7 @@ def computeDatasetNodeRepresentations(formatted_dataset,
     computeNodeRepresentations = getattr(importlib.import_module(
         f"models.Baseline.{embedding_scheme}.repr.{method}"), 'computeNodeRepresentations')
     # Prepare the data loader if we are dealing with torch data
-    if embedding_scheme == 'WL':
+    if embedding_scheme == 'WL' and method == 'continuous':
         formatted_dataset = DataLoader(formatted_dataset, batch_size=1)
     # Parallelize computations at graph level
     if parallel:

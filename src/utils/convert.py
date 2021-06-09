@@ -1,7 +1,9 @@
+import os
 import torch
 import numpy as np
 import networkx as nx
 
+from igraph import Graph
 from torch_geometric.utils.convert import from_networkx
 
 
@@ -17,6 +19,28 @@ def getAdjacencyList(G):
 	return adj_list
 
 
+def fromNetworkx2GraphML(dataset):
+    '''
+    Auxiliary function that converts a networkx dataset to graphML data.
+
+    Parameters:
+        - dataset: (list<nx.Graph>) List of networkx graphs.
+
+    Returns:
+        - (list<igraph.Graph>) Converted data.
+    '''
+    temp_filename = 'temp_graph.graphml'
+    graphml_dataset = []
+    for G in dataset:
+        # As there is no direct function to convert to graphml on the fly,
+        # we do this workaround to convert the data.
+        nx.write_graphml(G, temp_filename)
+        G = Graph.Read_GraphML(temp_filename)
+        graphml_dataset.append(G)
+        os.remove(temp_filename)
+    return graphml_dataset
+
+    
 def fromNetworkx2Torch(dataset, add_degree=True):
     '''
     Auxiliary function that converts a networkx dataset to torch_geometric.data.
@@ -26,7 +50,7 @@ def fromNetworkx2Torch(dataset, add_degree=True):
     	- add_degree: (bool) Whether to add the degree for the node features.
 
     Returns:
-    	- (list<torch_geometric.data>) Converted list to 
+    	- (list<torch_geometric.data>) Converted list.
     '''
     torch_dataset = []
     #

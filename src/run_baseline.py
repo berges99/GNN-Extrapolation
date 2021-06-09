@@ -10,7 +10,7 @@ from collections import OrderedDict
 from utils.data import generateShuffle
 from utils.stats import evaluatePerformance
 from utils.io import readPickle, writePickle, getLatestVersion
-from utils.convert import getAdjacencyList, fromNetworkx2Torch
+from utils.convert import getAdjacencyList, fromNetworkx2Torch, fromNetworkx2GraphML
 
 from models.Baseline.compute_distances import computeDistMatrix
 from models.Baseline.compute_node_representations import computeDatasetNodeRepresentations
@@ -115,7 +115,10 @@ def main():
 	networkx_dataset = readPickle(f'{args.path}/raw/{dataset_filename}')
 	# Fromat the data in a convenient way
 	if args.embedding_scheme == 'WL':
-		formatted_dataset = fromNetworkx2Torch(networkx_dataset, add_degree=True)
+		if args.method == 'continuous':
+			formatted_dataset = fromNetworkx2Torch(networkx_dataset, add_degree=True)
+		else: # elif args.method == 'hashing'
+			formatted_dataset = fromNetworkx2GraphML(networkx_dataset)
 	else: # elif args.embedding_scheme == 'Trees'
 		formatted_dataset = [getAdjacencyList(G) for G in networkx_dataset]
 	
@@ -134,10 +137,19 @@ def main():
 	else:
 		node_representations = computeDatasetNodeRepresentations(
 			formatted_dataset, args.embedding_scheme, args.method, 
-			parallel=True, **node_representations_kwargs
+			parallel=False, **node_representations_kwargs
 		)
-		writePickle(node_representations, filename=node_representations_filename)
+		#writePickle(node_representations, filename=node_representations_filename)
+	print(node_representations)
 	
+
+	# from models.Baseline.WL.repr.hashing import computeNodeRepresentations
+	# for i in range(len(formatted_dataset)):
+	# 	node_representations = computeNodeRepresentations(formatted_dataset[i], depth=args.depth)
+	# 	print(node_representations)
+	# return
+
+
 	##########
 	# Compute the pairwise distance matrix if necessary
 	distance_kwargs = OrderedDict({'depth': args.depth})
@@ -152,7 +164,8 @@ def main():
 			node_representations_flatten, args.embedding_scheme, args.distance, 
 			nystrom=False, parallel=True, **distance_kwargs
 		)
-		writePickle((node_representations_flatten, dist_matrix), filename=distances_filename)
+		#writePickle((node_representations_flatten, dist_matrix), filename=distances_filename)
+	print(dist_matrix)
 	
 	# ##########
 	# # Compute and store basic dataset stats

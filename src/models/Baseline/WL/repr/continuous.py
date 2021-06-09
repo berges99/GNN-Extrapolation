@@ -39,7 +39,7 @@ class WL(MessagePassing):
 		return norm.view(-1, 1) * x_j
 
 
-def computeNodeRepresentations(G, depth=3, normalization='wasserstein'):
+def computeNodeRepresentations(G, depth=3, normalization='wasserstein', **kwargs):
 	'''
 	Compute the WL kernel nodde representations for the continuous attributed case.
 
