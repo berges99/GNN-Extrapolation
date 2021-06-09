@@ -51,8 +51,8 @@ def readArguments():
     	'--method', type=str, default='apted', choices=['apted'],
     	help='Method to use for the extraction of rooted trees/d-patterns. Available choices are [apted].')
     rooted_trees.add_argument(
-    	'--distance', type=str, default='apted', choices=['apted'],
-    	help='Distance to use for computing the distances/kernel values between rooted trees. Available choices are [apted].')
+    	'--distance', type=str, default='edit', choices=['edit'],
+    	help='Distance to use for computing the distances/kernel values between rooted trees. Available choices are [edit].')
     return parser.parse_args()
 
 
@@ -139,16 +139,13 @@ def main():
 			formatted_dataset, args.embedding_scheme, args.method, 
 			parallel=False, **node_representations_kwargs
 		)
-		#writePickle(node_representations, filename=node_representations_filename)
-	print(node_representations)
-	
+		writePickle(node_representations, filename=node_representations_filename)	
 
 	# from models.Baseline.WL.repr.hashing import computeNodeRepresentations
 	# for i in range(len(formatted_dataset)):
 	# 	node_representations = computeNodeRepresentations(formatted_dataset[i], depth=args.depth)
 	# 	print(node_representations)
 	# return
-
 
 	##########
 	# Compute the pairwise distance matrix if necessary
@@ -164,8 +161,7 @@ def main():
 			node_representations_flatten, args.embedding_scheme, args.distance, 
 			nystrom=False, parallel=True, **distance_kwargs
 		)
-		#writePickle((node_representations_flatten, dist_matrix), filename=distances_filename)
-	print(dist_matrix)
+		writePickle((node_representations_flatten, dist_matrix), filename=distances_filename)
 	
 	# ##########
 	# # Compute and store basic dataset stats
