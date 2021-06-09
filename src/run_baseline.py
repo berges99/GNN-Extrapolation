@@ -7,10 +7,13 @@ import networkx as nx
 
 from collections import OrderedDict
 
+from utils.data import generateShuffle
 from utils.io import readPickle, writePickle, getLatestVersion
 from utils.convert import getAdjacencyList, fromNetworkx2Torch
 
+from models.Baseline.compute_distances import computeDistMatrix
 from models.Baseline.compute_node_representations import computeDatasetNodeRepresentations
+
 
 
 # from utils.data import *
@@ -27,6 +30,9 @@ def readArguments():
     # 	'--fullname', '-f', type=str, default='', help='Complete relative path of the dataset to be used.')
     parser.add_argument(
     	'--path', '-p', type=str, default='../data/synthetic/preferential_attachment', help='Default path to the data.')
+    # parser.add_argument(
+    # 	'--setting', '-s', type=str, default='regression', choiches=['regression', 'classification'],
+    # 	help='Whether to ')
     ###
     parser.add_argument(
     	'--depth', '-d', type=int, default=3, 
@@ -103,6 +109,9 @@ def baseline(dataset_rooted_trees_flatten,
 	return np.array(test_node_idxs), np.array(predictions)
 
 
+
+
+
 def main():
 	args = readArguments()
 
@@ -129,36 +138,40 @@ def main():
 		node_representations = readPickle(node_representations_filename)
 	else:
 		node_representations = computeDatasetNodeRepresentations(
-			formatted_dataset, args.embedding_scheme, args.method, **node_representations_kwargs)
+			formatted_dataset, args.embedding_scheme, args.method, 
+			parallel=True, **node_representations_kwargs
+		)
 		writePickle(node_representations, filename=node_representations_filename)
 	
-	# ##########
-	# # Compute the pairwise distance matrix if necessary (relabel if indicated)
-	# if os.path.isfile(f'{args.path}/dist_matrices/{filename}'):
-	# 	dataset_rooted_trees_flatten, dist_matrix = readPickle(f'{args.path}/dist_matrices/{filename}')
-	# else:
-	# 	dataset_rooted_trees_flatten = [
-	# 		re.sub(r"\d+", 'x', item) if args.relabel else item
-	# 		for sublist in dataset_rooted_trees for item in sublist
-	# 	]
-	# 	dist_matrix = computeDistMatrix(
-	# 		dataset_rooted_trees_flatten, method=args.method, nystrom=False, parallel=True)
-	# 	writePickle((dataset_rooted_trees_flatten, dist_matrix), f'{args.path}/dist_matrices/{filename}')
+	##########
+	# Compute the pairwise distance matrix if necessary
+	distance_kwargs = OrderedDict({'depth': args.depth})
+	distances_filename = \
+		f"{'/'.join(node_representations_filename.split('/')[:-1])}" \
+		f"/dist_matrices/{args.distance}/{node_representations_filename.split('/')[-1]}"
+	if os.path.isfile(distances_filename):
+		node_representations_flatten, dist_matrix = readPickle(distances_filename)
+	else:
+		node_representations_flatten = [item for sublist in node_representations for item in sublist]
+		dist_matrix = computeDistMatrix(
+			node_representations_flatten, args.embedding_scheme, args.distance, 
+			nystrom=False, parallel=True, **distance_kwargs
+		)
+		writePickle((node_representations_flatten, dist_matrix), filename=distances_filename)
+	print(dist_matrix)
 	
 	# ##########
 	# # Compute and store basic dataset stats
 	# computeDatasetStats(networkx_dataset, dataset_rooted_trees_flatten, dist_matrix, filepath=f'{args.path}/rooted_trees', filename=filename, sample=1)
 
-	# ##########
-	# # Read the teacher outputs of the dataset and split the data
-	# regression_outputs_filename = getLatestVersion(
-	# 	f'{args.path}/teacher_outputs', filename=filename.rstrip('.pkl'))
-	# regression_outputs = readPickle(f'{args.path}/teacher_outputs/{regression_outputs_filename}')
-	# regression_outputs_flatten = np.array([item for sublist in regression_outputs for item in sublist])
-	# # Generate random shuffle
-	# train_idxs, test_idxs = generateShuffle(len(dataset_rooted_trees), sort=True)
-	
-	
+	##########
+	# Read the teacher outputs of the dataset and split the data
+	regression_outputs_filename = getLatestVersion(
+		f'{args.path}/teacher_outputs', filename=dataset_filename.rstrip('.pkl'))
+	regression_outputs = readPickle(f'{args.path}/teacher_outputs/{regression_outputs_filename}')
+	regression_outputs_flatten = np.array([item for sublist in regression_outputs for item in sublist])
+	# Generate random shuffle
+	train_idxs, test_idxs = generateShuffle(len(node_representations), sort=True)
 
 	# ##########
 	# # Predict on test data with the baseline method
