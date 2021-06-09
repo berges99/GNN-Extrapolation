@@ -8,18 +8,12 @@ import networkx as nx
 from collections import OrderedDict
 
 from utils.data import generateShuffle
+from utils.stats import evaluatePerformance
 from utils.io import readPickle, writePickle, getLatestVersion
 from utils.convert import getAdjacencyList, fromNetworkx2Torch
 
 from models.Baseline.compute_distances import computeDistMatrix
 from models.Baseline.compute_node_representations import computeDatasetNodeRepresentations
-
-
-
-# from utils.data import *
-# from utils.stats import *
-# from models.Trees.compute_distances import computeDistMatrix
-
 
 
 
@@ -62,7 +56,8 @@ def readArguments():
     return parser.parse_args()
 
 
-def baseline(dataset_rooted_trees_flatten, 
+def baseline(node_representations_flatten,
+			 node_representations_idxs,
 		     regression_outputs_flatten, 
 		     dist_matrix, 
 		     train_idxs, 
@@ -70,12 +65,13 @@ def baseline(dataset_rooted_trees_flatten,
 		     aggregator='mean', 
 		     smoothed=True):
 	'''
-	Implementation of the baseline model. It gives predictions for the test data based on rooted
-	trees similarities.
+	Implementation of the baseline model. It gives predictions for the test data based on node representation
+	similarities.
 
 	Parameters:
-		- dataset_rooted_trees_flatten: (np.array) List with all the flattened rooted trees in the dataset.
-		- regression_outputs_flatten: (np.array) List with all the flattened outputs for all the nodes in the dataset.
+		- node_representations_flatten: (array_like) List with all the flattened node representations in the dataset.
+		- node_representations_idxs: (np.array<int>) Array with the number of nodes per graph in the dataset.
+		- regression_outputs_flatten: (np.array<float>) Array with all the flattened outputs for all the nodes in the dataset.
 		- dist_matrix: (np.ndarray) Pairwise distance matrix between all nodes in the dataset.
 		- train_idxs: (np.array) Graphs to be used as train data.
 		- test_idxs: (np.array) Graphs to be used as test data.
@@ -83,15 +79,14 @@ def baseline(dataset_rooted_trees_flatten,
 		- smoothed: (bool) Whether to use closest trees for the predictions.
 
 	Returns:
-		- (np.array) Flattened indices of the predicted values (withing the main dataset).
+		- (np.array) Flattened indices of the predicted values (within the main dataset).
 		- (np.array) Flattened predictions for the test data.
 	'''
-	aggregator = np.mean if aggregator == 'mean' else np.mean # To be continued
-	# Number of nodes per graph
-	n = 30
+	aggregator = np.mean if aggregator == 'mean' else np.mean # TBD
 	# Set test rows to infinity, such that we cannot use them for the predictions
 	test_node_idxs = []
 	for test_graph_idx in test_idxs:
+		n = node_representations_idxs[test_graph_idx]
 		test_node_idxs.extend([x for x in range(test_graph_idx * n, test_graph_idx * n + n)])
 	for test_node_idx in test_node_idxs:
 		dist_matrix[test_node_idx, :] = [np.inf] * len(dist_matrix)
@@ -158,7 +153,6 @@ def main():
 			nystrom=False, parallel=True, **distance_kwargs
 		)
 		writePickle((node_representations_flatten, dist_matrix), filename=distances_filename)
-	print(dist_matrix)
 	
 	# ##########
 	# # Compute and store basic dataset stats
@@ -173,14 +167,20 @@ def main():
 	# Generate random shuffle
 	train_idxs, test_idxs = generateShuffle(len(node_representations), sort=True)
 
-	# ##########
-	# # Predict on test data with the baseline method
-	# test_node_idxs, predictions = baseline(
-	# 	dataset_rooted_trees_flatten, regression_outputs_flatten, dist_matrix, train_idxs, test_idxs, smoothed=True)
-	# print(test_node_idxs, predictions)
-	# # Evaluate the performance
-	# total_error, avg_G_error, avg_n_error = evaluatePerformance(predictions, regression_outputs_flatten[test_node_idxs])
-	# print(total_error, avg_G_error, avg_n_error)
+	##########
+	# Predict on test data with the baseline method
+	# Compute number of nodes per graph (to handle multiple sized graphs in the future)
+	node_representations_idxs = np.array([len(G) for G in node_representations], dtype=int)
+	test_node_idxs, predictions = baseline(
+		node_representations_flatten, node_representations_idxs, regression_outputs_flatten, dist_matrix, 
+		train_idxs, test_idxs, aggregator='mean', smoothed=True
+	)
+	print(test_node_idxs)
+	print(predictions)
+	
+	# Evaluate the performance
+	total_error, avg_G_error, avg_n_error = evaluatePerformance(predictions, regression_outputs_flatten[test_node_idxs])
+	print(total_error, avg_G_error, avg_n_error)
 	
 	
 
