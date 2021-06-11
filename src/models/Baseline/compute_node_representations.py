@@ -38,17 +38,21 @@ def computeDatasetNodeRepresentations(formatted_dataset,
     # Import the adequate modules for computing the node representations
     computeNodeRepresentations = getattr(importlib.import_module(
         f"models.Baseline.{embedding_scheme}.repr.{method}"), 'computeNodeRepresentations')
-    # Prepare the data loader if we are dealing with torch data
-    if embedding_scheme == 'WL' and method == 'continuous':
-        formatted_dataset = DataLoader(formatted_dataset, batch_size=1)
-    # Parallelize computations at graph level
-    if parallel:
-        dataset_node_representations = \
-            (Parallel(n_jobs=NUM_CORES)
-                     (delayed(computeNodeRepresentations)(G) for G in tqdm(formatted_dataset)))   
+    # Compute all the embeddings with all the dataset when we are using the WL kernel hashing
+    if embedding_scheme == 'WL' and method == 'hashing':
+        dataset_node_representations = computeNodeRepresentations(formatted_dataset, **node_representations_kwargs)
     else:
-        dataset_node_representations = []
-        for G in tqdm(formatted_dataset):
-            node_representations = computeNodeRepresentations(G, **node_representations_kwargs)
-            dataset_node_representations.append(node_representations)
+        # Prepare the data loader if we are dealing with torch data
+        if embedding_scheme == 'WL' and method == 'continuous':
+            formatted_dataset = DataLoader(formatted_dataset, batch_size=1)
+        # Parallelize computations at graph level
+        if parallel:
+            dataset_node_representations = \
+                (Parallel(n_jobs=NUM_CORES)
+                         (delayed(computeNodeRepresentations)(G) for G in tqdm(formatted_dataset)))   
+        else:
+            dataset_node_representations = []
+            for G in tqdm(formatted_dataset):
+                node_representations = computeNodeRepresentations(G, **node_representations_kwargs)
+                dataset_node_representations.append(node_representations)
     return dataset_node_representations

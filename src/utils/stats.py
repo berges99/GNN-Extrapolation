@@ -12,9 +12,11 @@ from utils.plots import *
 
 
 
-def evaluatePerformance(predicted_values, real_values):
+# TODO: normalize (parameterize the type of normalization)
+# TODO: change performance metrics depending on setting (regression, classification)
+def evaluatePerformance(predicted_values, real_values, normalization=None):
 	'''
-	Function to evaluate the performance of some predictions.
+	Function to evaluate the normalized root mean square error (RMSE) of some predictions.
 	¡We assume that the predicted and real values are ordered in the same way!
 
 	Parameters:
@@ -29,12 +31,21 @@ def evaluatePerformance(predicted_values, real_values):
 	print('Evaluating performance...')
 	assert len(predicted_values) == len(real_values), 'Prediction dimensions do not match!'
 	# For all the graphs in the test collection
-	total_error = 0
-	for i, n in enumerate(tqdm(real_values)):
-		total_error += np.abs(predicted_values[i] - real_values[i])
-	avg_G_error = total_error / (len(predicted_values) / 30)
-	avg_n_error = avg_G_error / 30
-	return total_error, avg_G_error, avg_n_error
+	n = len(predicted_values)
+	rmse = 0
+	for i in tqdm(range(n)):
+		rmse += (predicted_values[i] - real_values[i])**2
+	rmse = np.sqrt(rmse / n)
+	# Normalize if specified (NRMSE)
+	if normalization:
+		if normalization == 'minmax':
+			rmse /= max(real_values) - min(real_values)
+		elif normalization == 'mean':
+			rmse /= np.mean(real_values)
+		else:
+			print(f'Normalization method ({normalization}) not implemented!')
+			return
+	return rmse
 
 
 ##########

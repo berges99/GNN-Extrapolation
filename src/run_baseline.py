@@ -1,5 +1,5 @@
 import os
-import re
+import sys
 import argparse
 import numpy as np
 import pandas as pd
@@ -9,7 +9,7 @@ from collections import OrderedDict
 
 from utils.data import generateShuffle
 from utils.stats import evaluatePerformance
-from utils.io import readPickle, writePickle, getLatestVersion
+from utils.io import KeepOrderAction, readPickle, writePickle, getLatestVersion
 from utils.convert import getAdjacencyList, fromNetworkx2Torch, fromNetworkx2GraphML
 
 from models.Baseline.compute_distances import computeDistMatrix
@@ -20,39 +20,50 @@ from models.Baseline.compute_node_representations import computeDatasetNodeRepre
 def readArguments():
     '''Auxiliary function to parse the arguments passed to the script.'''
     parser = argparse.ArgumentParser()
+    ##########
+	# Parse all the input dataset related arguments
     # parser.add_argument(
     # 	'--fullname', '-f', type=str, default='', help='Complete relative path of the dataset to be used.')
     parser.add_argument(
-    	'--path', '-p', type=str, default='../data/synthetic/preferential_attachment', help='Default path to the data.')
+    	'--path', '-p', type=str, default='../data/synthetic/preferential_attachment',
+    	help='Default path to the data.')
     # parser.add_argument(
     # 	'--setting', '-s', type=str, default='regression', choiches=['regression', 'classification'],
     # 	help='Whether to ')
-    ###
-    parser.add_argument(
-    	'--depth', '-d', type=int, default=3, 
-    	help='Max. receptive field depth for extracting the node representations, e.g. depth of the rooted trees.')
-    ###
+    ##########
+	# Parse all the arguments related to the embedding scheme, methods and distances
     subparsers = parser.add_subparsers(dest='embedding_scheme')
     subparsers.required = True
     ###
     WL = subparsers.add_parser('WL', help='WL kernel embedding_scheme parser.')
     WL.add_argument(
-    	'--method', type=str, default='continuous', choices=['continuous', 'hashing'],
+    	'--method', type=str, required=True, choices=['continuous', 'hashing'], action=KeepOrderAction, #default='continuous',
     	help='Method to compute the WL kernel. Available choices are [continuous, categorical].')
     WL.add_argument(
-    	'--normalization', type=str, default='wasserstein', choices=['wasserstein', 'GCN'],
+    	'--depth', '-d', type=int, required=True, action=KeepOrderAction, #default=3,
+    	help='Max. receptive field depth for extracting the node representations, e.g. depth of the rooted trees.')
+    WL.add_argument(
+    	'--normalization', type=str, required='--method continuous' in ' '.join(sys.argv),
+    	choices=['wasserstein', 'GCN'], action=KeepOrderAction, #default='wasserstein',
     	help='Normalization to apply at each step of the WL kernel. Available choices are [wasserstein, GCN].')
     WL.add_argument(
-    	'--distance', type=str, default='hamming', choices=['hamming', 'l1', 'l2'],
+    	'--distance', type=str, required=True, choices=['hamming', 'l1', 'l2'], action=KeepOrderAction, #default='hamming',
     	help='Distance to use for computing the distances between node representations. Available choices are [hamming, l1, l2].')
     ###
     rooted_trees = subparsers.add_parser('Trees', help='Rooted trees embedding_scheme parser.')
     rooted_trees.add_argument(
-    	'--method', type=str, default='apted', choices=['apted'],
+    	'--method', type=str, required=True, choices=['apted'], action=KeepOrderAction, #default='apted',
     	help='Method to use for the extraction of rooted trees/d-patterns. Available choices are [apted].')
     rooted_trees.add_argument(
-    	'--distance', type=str, default='edit', choices=['edit'],
+    	'--depth', '-d', type=int, required=True, action=KeepOrderAction, #default=3,
+    	help='Max. receptive field depth for extracting the node representations, e.g. depth of the rooted trees.')
+    rooted_trees.add_argument(
+    	'--distance', type=str, required=True, choices=['edit'], action=KeepOrderAction, #default='edit',
     	help='Distance to use for computing the distances/kernel values between rooted trees. Available choices are [edit].')
+    rooted_trees.add_argument(
+    	'--relabel', type=bool, required='--distance edit' in ' '.join(sys.argv), action=KeepOrderAction,
+    	help='Whether to perform relabeling of the extracted rooted trees of the dataset, i.e. no relabel cost in edit distance.')
+    
     return parser.parse_args()
 
 
@@ -100,7 +111,8 @@ def baseline(node_representations_flatten,
 			prediction = aggregator(regression_outputs_flatten[min_idxs])
 			predictions.append(prediction)
 		else:
-			predictions.append(0)
+			# TODO: adapt to classification setting
+			predictions.append(np.mean(regression_outputs_flatten))
 	return np.array(test_node_idxs), np.array(predictions)
 
 
@@ -124,14 +136,16 @@ def main():
 	
 	##########
 	# Compute all the node representations for every node in the dataset # (if necessary)
+	ordered_args = np.array([x[0] for x in args.ordered_args])
+	node_representations_kwargs_idx1 = np.where(ordered_args == 'method')[0][0] + 1
+	node_representations_kwargs_idx2 = np.where(ordered_args == 'distance')[0][0]
 	node_representations_kwargs = OrderedDict({
-		k: v for k, v in vars(args).items() 
-		if k not in ['path', 'distance', 'embedding_scheme', 'method']
+		k: v for k, v in args.ordered_args[node_representations_kwargs_idx1:node_representations_kwargs_idx2]
 	})
 	node_representations_filename = \
 		f"{args.path}/node_representations/{args.embedding_scheme}/{args.method}/" \
 		f"{'_'.join([k[0] + str(v).capitalize() for k, v in node_representations_kwargs.items()])}" \
-		f"_{dataset_filename}"
+		f"__{dataset_filename}"
 	if os.path.isfile(node_representations_filename):
 		node_representations = readPickle(node_representations_filename)
 	else:
@@ -139,20 +153,21 @@ def main():
 			formatted_dataset, args.embedding_scheme, args.method, 
 			parallel=False, **node_representations_kwargs
 		)
-		writePickle(node_representations, filename=node_representations_filename)	
+		writePickle(node_representations, filename=node_representations_filename)
 
-	# from models.Baseline.WL.repr.hashing import computeNodeRepresentations
-	# for i in range(len(formatted_dataset)):
-	# 	node_representations = computeNodeRepresentations(formatted_dataset[i], depth=args.depth)
-	# 	print(node_representations)
-	# return
+	print(node_representations)
 
 	##########
 	# Compute the pairwise distance matrix if necessary
-	distance_kwargs = OrderedDict({'depth': args.depth})
+	distance_kwargs = OrderedDict({
+		k: v for k, v in args.ordered_args[node_representations_kwargs_idx2:]
+	})
 	distances_filename = \
 		f"{'/'.join(node_representations_filename.split('/')[:-1])}" \
-		f"/dist_matrices/{args.distance}/{node_representations_filename.split('/')[-1]}"
+		f"/dist_matrices/{args.distance}/" \
+		f"{node_representations_filename.split('__')[0].split('/')[-1]}" \
+		f"__{'_'.join([k[0] + str(v).capitalize() for k, v in distance_kwargs.items()])}" \
+		f"__{node_representations_filename.split('__')[1]}"
 	if os.path.isfile(distances_filename):
 		node_representations_flatten, dist_matrix = readPickle(distances_filename)
 	else:
@@ -163,6 +178,9 @@ def main():
 		)
 		writePickle((node_representations_flatten, dist_matrix), filename=distances_filename)
 	
+	print(dist_matrix)
+
+	# TODO: integrate and finish all the stats + smoothing matrices...
 	# ##########
 	# # Compute and store basic dataset stats
 	# computeDatasetStats(networkx_dataset, dataset_rooted_trees_flatten, dist_matrix, filepath=f'{args.path}/rooted_trees', filename=filename, sample=1)
@@ -184,12 +202,18 @@ def main():
 		node_representations_flatten, node_representations_idxs, regression_outputs_flatten, dist_matrix, 
 		train_idxs, test_idxs, aggregator='mean', smoothed=True
 	)
+	print()
+	print('Prediction indices:')
 	print(test_node_idxs)
+	print()
+	print('Predictions:')
 	print(predictions)
-	
+
 	# Evaluate the performance
-	total_error, avg_G_error, avg_n_error = evaluatePerformance(predictions, regression_outputs_flatten[test_node_idxs])
-	print(total_error, avg_G_error, avg_n_error)
+	error = evaluatePerformance(
+		predictions, regression_outputs_flatten[test_node_idxs], normalization='minmax')
+	print()
+	print(f'Error: {error}')
 	
 	
 

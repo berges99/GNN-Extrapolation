@@ -1,10 +1,23 @@
 import os
 import pickle
+import argparse
 import numpy as np
 
 from pathlib import Path
 from functools import wraps
 
+
+
+class KeepOrderAction(argparse.Action):
+	'''Aux class to keep the order of the arguments that are given through the terminal.'''
+	def __call__(self, parser, namespace, values, option_string=None):
+		if not 'ordered_args' in namespace:
+			setattr(namespace, 'ordered_args', [])
+		previous = namespace.ordered_args
+		previous.append((self.dest, values))
+		setattr(namespace, 'ordered_args', previous)
+		# Maintain the values in the regular argparse labels
+		setattr(namespace, self.dest, values)
 
 
 def buildPath(f):
