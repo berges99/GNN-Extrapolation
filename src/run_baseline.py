@@ -12,6 +12,7 @@ from utils.stats import evaluatePerformance
 from utils.io import KeepOrderAction, readPickle, writePickle, getLatestVersion
 from utils.convert import getAdjacencyList, fromNetworkx2Torch, fromNetworkx2GraphML
 
+from models.Baseline.smoothness import computeW, computeLaplacian, computeSmoothness
 from models.Baseline.compute_distances import computeDistMatrix
 from models.Baseline.compute_node_representations import computeDatasetNodeRepresentations
 
@@ -70,12 +71,13 @@ def readArguments():
     return parser.parse_args()
 
 
+# TODO: adapt to classification setting
 def baseline(node_representations_flatten,
 			 node_representations_idxs,
 		     regression_outputs_flatten, 
 		     dist_matrix, 
 		     train_idxs, 
-		     test_idxs,
+		     test_idxs=None,
 		     aggregator='mean', 
 		     smoothed=True):
 	'''
@@ -97,13 +99,21 @@ def baseline(node_representations_flatten,
 		- (np.array) Flattened predictions for the test data.
 	'''
 	aggregator = np.mean if aggregator == 'mean' else np.mean # TBD
-	# Set test rows to infinity, such that we cannot use them for the predictions
-	test_node_idxs = []
-	for test_graph_idx in test_idxs:
-		n = node_representations_idxs[test_graph_idx]
-		test_node_idxs.extend([x for x in range(test_graph_idx * n, test_graph_idx * n + n)])
-	for test_node_idx in test_node_idxs:
-		dist_matrix[test_node_idx, :] = [np.inf] * len(dist_matrix)
+	# Flatten the idxs
+	train_node_idxs = []
+	for train_graph_idx in train_idxs:
+		n = node_representations_idxs[train_graph_idx]
+		train_node_idxs.extend([x for x in range(train_graph_idx * n, train_graph_idx * n + n)])
+	# Set test rows to infinity, such that we cannot use them for the predictions (if necessary)
+	if test_idxs:
+		test_node_idxs = []
+		for test_graph_idx in test_idxs:
+			n = node_representations_idxs[test_graph_idx]
+			test_node_idxs.extend([x for x in range(test_graph_idx * n, test_graph_idx * n + n)])
+		for test_node_idx in test_node_idxs:
+			dist_matrix[test_node_idx, :] = [np.inf] * len(dist_matrix)
+	else:
+		test_node_idxs = train_node_idxs
 	# Get the closest trees
 	predictions = []
 	for test_node_idx in test_node_idxs:
@@ -181,6 +191,9 @@ def main():
 		)
 		writePickle((node_representations_flatten, dist_matrix), filename=distances_filename)
 	
+	print()
+	print(f'Distance matrix: (shape = [{dist_matrix.shape}])')
+	print('-' * 30)
 	print(dist_matrix)
 
 	# TODO: integrate and finish all the stats + smoothing matrices...
@@ -201,22 +214,33 @@ def main():
 	# Predict on test data with the baseline method
 	# Compute number of nodes per graph (to handle multiple sized graphs in the future)
 	node_representations_idxs = np.array([len(G) for G in node_representations], dtype=int)
-	test_node_idxs, predictions = baseline(
+	node_idxs, predictions = baseline(
 		node_representations_flatten, node_representations_idxs, regression_outputs_flatten, dist_matrix, 
-		train_idxs, test_idxs, aggregator='mean', smoothed=True
+		train_idxs=[i for i in range(len(node_representations))], test_idxs=None, aggregator='mean', smoothed=True
 	)
 	print()
 	print('Prediction indices:')
-	print(test_node_idxs)
+	print(node_idxs)
 	print()
 	print('Predictions:')
 	print(predictions)
 
 	# Evaluate the performance
 	error = evaluatePerformance(
-		predictions, regression_outputs_flatten[test_node_idxs], normalization='minmax')
+		predictions, regression_outputs_flatten[node_idxs], normalization='minmax')
 	print()
 	print(f'Error: {error}')
+
+
+	##########
+	# Compute the adjacency matrix W via a athresholded Gaussian kernel weighting function
+	W = computeW(dist_matrix)
+	print(W)
+	L = computeLaplacian(W, normalize=True)
+	print(L)
+	smoothness = computeSmoothness(L, predictions[:, None])
+	print()
+	print(f'Smoothness: {smoothness}')
 	
 	
 

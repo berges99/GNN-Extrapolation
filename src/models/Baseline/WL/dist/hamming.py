@@ -2,6 +2,7 @@ import numpy as np
 
 
 
+# TODO: apply parameterized downscaling for "further" hash values, e.g. alpha_{i+1} = alpha_i / degree_max
 def computeDistance(repr1, repr2):
 	'''
 	The hamming distance between two inputs of equal length is the number of positions
