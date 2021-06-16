@@ -10,10 +10,11 @@ from sklearn.base import TransformerMixin
 
 
 class WeisfeilerLehman(TransformerMixin):
-    """
-    Class that implements the Weisfeiler-Lehman transform
-    Credits: Christian Bock and Bastian Rieck
-    """
+    '''
+    Class that implements the Weisfeiler-Lehman hashing transform.
+
+    Modified version from "Christian Bock and Bastian Rieck" in the work "Wasserstein Weisfeiler-Lehman Graph Kernels".
+    '''
     def __init__(self):
         self._relabel_steps = defaultdict(dict)
         self._label_dict = {}
@@ -29,14 +30,18 @@ class WeisfeilerLehman(TransformerMixin):
         self._last_new_label += 1
         return self._last_new_label
 
-    def _relabel_graphs(self, X: List[ig.Graph]):
+    def _relabel_graphs(self, X: List[ig.Graph], initial_labeling: str='degrees'):
         num_unique_labels = 0
         preprocessed_graphs = []
         for i, g in enumerate(X):
             x = g.copy()
             
             if not 'label' in x.vs.attribute_names():
-                x.vs['label'] = list(map(str, [l for l in x.vs.degree()]))           
+                # Use the degrees or 1s
+                if initial_labeling == 'ones':
+                    x.vs['label'] = list(map(str, [1 for _ in x.vs.degree()]))
+                else: #elif initial_labeling == 'degrees':
+                    x.vs['label'] = list(map(str, [l for l in x.vs.degree()]))           
             labels = x.vs['label']
             
 
@@ -54,11 +59,18 @@ class WeisfeilerLehman(TransformerMixin):
         self._reset_label_generation()
         return preprocessed_graphs
 
-    def fit_transform(self, X: List[ig.Graph], num_iterations: int=3, return_sequences=True):
+    def fit_transform(self, 
+                      X: List[ig.Graph],
+                      num_iterations: int=3, 
+                      return_sequences=True,
+                      initial_labeling: str='degrees'):
         self._label_sequences = [
             np.full((len(g.vs), num_iterations + 1), np.nan) for g in X
         ]
-        X = self._relabel_graphs(X)
+        ###
+        assert initial_labeling in ['ones', 'degrees'], 'Relabeling method not implemented!'
+        X = self._relabel_graphs(X, initial_labeling=initial_labeling)
+        ###
         for it in np.arange(1, num_iterations+1, 1):
             self._reset_label_generation()
             self._label_dict = {}
@@ -111,7 +123,7 @@ class WeisfeilerLehman(TransformerMixin):
             return neighbor_labels
 
 
-def computeNodeRepresentations(X, depth=3, **kwargs):
+def computeNodeRepresentations(X, depth, initial_labeling):
     '''
     Compute the WL kernel nodde representations using the hashing version.
 
@@ -123,5 +135,5 @@ def computeNodeRepresentations(X, depth=3, **kwargs):
         - (array_like) Node representations for every node in the input graph.
     '''
     wl = WeisfeilerLehman()
-    node_representations = wl.fit_transform(X, num_iterations=depth)
+    node_representations = wl.fit_transform(X, num_iterations=depth, initial_labeling=initial_labeling)
     return node_representations

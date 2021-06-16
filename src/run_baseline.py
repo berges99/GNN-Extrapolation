@@ -43,6 +43,9 @@ def readArguments():
     	'--depth', '-d', type=int, required=True, action=KeepOrderAction, #default=3,
     	help='Max. receptive field depth for extracting the node representations, e.g. depth of the rooted trees.')
     WL.add_argument(
+    	'--initial_labeling', type=str, required=True, choices=['ones', 'degrees'], action=KeepOrderAction, #default=ones
+    	help='Type of labeling to be used in the case that there aren\'t any available. Available choices are [ones, degrees].')
+    WL.add_argument(
     	'--normalization', type=str, required='--method continuous' in ' '.join(sys.argv),
     	choices=['wasserstein', 'GCN'], action=KeepOrderAction, #default='wasserstein',
     	help='Normalization to apply at each step of the WL kernel. Available choices are [wasserstein, GCN].')
@@ -116,9 +119,6 @@ def baseline(node_representations_flatten,
 	return np.array(test_node_idxs), np.array(predictions)
 
 
-
-
-
 def main():
 	args = readArguments()
 
@@ -128,7 +128,7 @@ def main():
 	# Fromat the data in a convenient way
 	if args.embedding_scheme == 'WL':
 		if args.method == 'continuous':
-			formatted_dataset = fromNetworkx2Torch(networkx_dataset, add_degree=True)
+			formatted_dataset = fromNetworkx2Torch(networkx_dataset, add_degree=True) # canviar per adaptar-ho al nou argument de tipus de initial labeling
 		else: # elif args.method == 'hashing'
 			formatted_dataset = fromNetworkx2GraphML(networkx_dataset)
 	else: # elif args.embedding_scheme == 'Trees'
@@ -155,6 +155,9 @@ def main():
 		)
 		writePickle(node_representations, filename=node_representations_filename)
 
+	print()
+	print('Node representations:')
+	print('-' * 30)
 	print(node_representations)
 
 	##########
