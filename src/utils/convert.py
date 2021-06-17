@@ -41,13 +41,13 @@ def fromNetworkx2GraphML(dataset):
     return graphml_dataset
 
     
-def fromNetworkx2Torch(dataset, add_degree=True):
+def fromNetworkx2Torch(dataset, initial_relabeling=None):
     '''
     Auxiliary function that converts a networkx dataset to torch_geometric.data.
 
     Parameters:
     	- dataset: (list<nx.Graph>) List of networkx graphs.
-    	- add_degree: (bool) Whether to add the degree for the node features.
+    	- initial_labeling: (str) Type of initial relabeling to perform (if needed).
 
     Returns:
     	- (list<torch_geometric.data>) Converted list.
@@ -57,11 +57,10 @@ def fromNetworkx2Torch(dataset, add_degree=True):
     for g in dataset:
         torch_g = from_networkx(g)
         # Add the node degrees as node features
-        if add_degree:
+        if initial_relabeling == 'degrees':
         	torch_g.x = torch.Tensor(np.array(list(dict(g.degree()).values()))[:, None])
-        # Otherwise just add a 1.
-        else:
-            torch_g.x = torch.ones((1, torch_g.size(0)))
+        elif initial_relabeling == 'ones':
+            torch_g.x = torch.Tensor(np.array([1 for _ in range(len(g))])[:, None])
         torch_dataset.append(torch_g)
     return torch_dataset
 
