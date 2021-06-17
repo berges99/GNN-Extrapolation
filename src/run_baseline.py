@@ -83,7 +83,7 @@ def baseline(node_representations_flatten,
              train_idxs, 
              test_idxs=None,
              aggregator='mean', 
-             smoothed=True):
+             knn=True):
     '''
     Implementation of the baseline model. It gives predictions for the test data based on node representation
     similarities.
@@ -96,7 +96,7 @@ def baseline(node_representations_flatten,
         - train_idxs: (np.array) Graphs to be used as train data.
         - test_idxs: (np.array) Graphs to be used as test data.
         - aggregator: (str) Aggregator to use when multiple rooted trees are at the same distance.
-        - smoothed: (bool) Whether to use closest trees for the predictions.
+        - knn: (bool) Whether to use closest trees for the predictions.
 
     Returns:
         - (np.array) Flattened indices of the predicted values (within the main dataset).
@@ -123,7 +123,7 @@ def baseline(node_representations_flatten,
     for test_node_idx in test_node_idxs:
         min_dist = np.min(dist_matrix[:, test_node_idx])
         # Check if we want exact or fuzzy matching
-        if smoothed or min_dist == 0:
+        if knn or min_dist == 0:
             min_idxs = np.where(dist_matrix[:, test_node_idx] == min_dist)[0]
             prediction = aggregator(regression_outputs_flatten[min_idxs])
             predictions.append(prediction)
@@ -208,7 +208,9 @@ def main():
     # ##########
     # # Compute and store basic dataset stats
     # computeDatasetStats(
-        # networkx_dataset, dataset_rooted_trees_flatten, dist_matrix, filepath=f'{args.path}/rooted_trees', filename=filename, sample=1)
+        # networkx_dataset, dataset_rooted_trees_flatten, dist_matrix, 
+        # filepath=f'{args.path}/rooted_trees', filename=filename, sample=1
+    # )
 
     ##########
     # Read the teacher outputs of the dataset and split the data
@@ -225,7 +227,7 @@ def main():
     node_representations_idxs = np.array([len(G) for G in node_representations], dtype=int)
     node_idxs, predictions = baseline(
         node_representations_flatten, node_representations_idxs, regression_outputs_flatten, dist_matrix, 
-        train_idxs=[i for i in range(len(node_representations))], test_idxs=None, aggregator='mean', smoothed=True
+        train_idxs=[i for i in range(len(node_representations))], test_idxs=None, aggregator='mean', knn=True
     )
     print()
     print('Prediction indices:')
