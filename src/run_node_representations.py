@@ -73,9 +73,9 @@ def main():
     ##########
     # Compute all the node representations for every node in the dataset # (if necessary)
     ordered_args = np.array([x[0] for x in args.ordered_args])
-    node_representations_kwargs_idx1 = np.where(ordered_args == 'method')[0][0]
+    node_representations_kwargs_idx = np.where(ordered_args == 'method')[0][0]
     node_representations_kwargs = OrderedDict({
-        k: v for k, v in args.ordered_args[node_representations_kwargs_idx1 + 1:]
+        k: v for k, v in args.ordered_args[node_representations_kwargs_idx + 1:]
     })
     node_representations_filename = \
         f"{args.path}/node_representations/{args.embedding_scheme}/{args.method}/" \
