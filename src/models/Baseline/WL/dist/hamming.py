@@ -2,8 +2,7 @@ import numpy as np
 
 
 
-# TODO: apply parameterized downscaling for "further" hash values, e.g. alpha_{i+1} = alpha_i / degree_max
-def computeDistance(repr1, repr2):
+def computeDistance(repr1, repr2, scaling=None):
 	'''
 	The hamming distance between two inputs of equal length is the number of positions
 	at which these inputs vary.
@@ -14,4 +13,12 @@ def computeDistance(repr1, repr2):
 	Returns:
 		- (float) Distance between the two given inputs.
 	'''
-	return np.sum(np.array([c1 != c2 for c1, c2 in zip(repr1, repr2)], dtype=float))
+	if scaling:
+		alphas = [1]
+		for i in range(1, len(repr1)):
+			alphas.append(alphas[i - 1] / scaling)
+	# If not specified apply no scaling
+	else:
+		alphas = np.ones_like(repr1)
+	return np.sum(np.array([
+		alphas[i] * (c1 != c2) for i, (c1, c2) in enumerate(zip(repr1, repr2))], dtype=float))

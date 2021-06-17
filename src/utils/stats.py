@@ -12,7 +12,6 @@ from utils.plots import *
 
 
 
-# TODO: normalize (parameterize the type of normalization)
 # TODO: change performance metrics depending on setting (regression, classification)
 def evaluatePerformance(predicted_values, real_values, normalization=None):
 	'''
@@ -46,6 +45,19 @@ def evaluatePerformance(predicted_values, real_values, normalization=None):
 			print(f'Normalization method ({normalization}) not implemented!')
 			return
 	return rmse
+
+
+##########
+
+
+def getMaxDegree(networkx_dataset):
+	'''Auxiliary function that computes the maximum node degree in a networkx dataset.'''
+	return np.max([d for sublist in [dict(G.degree).values() for G in networkx_dataset] for d in sublist])
+
+
+def getAvgDegree(networkx_dataset):
+	'''Auxiliary function that computes the average node degree in a networkx dataset.'''
+	return np.mean([d for sublist in [dict(G.degree).values() for G in networkx_dataset] for d in sublist])
 
 
 ##########

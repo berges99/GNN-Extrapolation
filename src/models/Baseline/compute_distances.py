@@ -11,12 +11,13 @@ from joblib import Parallel, delayed
 NUM_CORES = multiprocessing.cpu_count()
 
 
-def auxiliaryDistParallel(trees, computeDistance):
+def auxiliaryDistParallel(node_representations, computeDistance, **distance_kwargs):
     '''Auxiliary function that computes the pairwise distances for a single vector.'''
-    n = len(trees)
+    n = len(node_representations)
     distances = np.zeros(n)
     for j in range(n):
-        distances[j] = computeDistance(trees[0], trees[j])
+        distances[j] = computeDistance(
+            node_representations[0], node_representations[j], **distance_kwargs)
     return distances
 
 
@@ -57,7 +58,8 @@ def computeDistMatrix(node_representations,
         if parallel:
             distances_ = \
                 (Parallel(n_jobs=NUM_CORES)
-                         (delayed(auxiliaryDistParallel)(node_representations[i:], computeDistance) for i in tqdm(range(n))))
+                         (delayed(auxiliaryDistParallel)
+                         (node_representations[i:], computeDistance, **distance_kwargs) for i in tqdm(range(n))))
             # Convert into symmetric matrix
             for i in range(n):
                 distances[i, i:] = distances_[i]
@@ -66,6 +68,7 @@ def computeDistMatrix(node_representations,
             # Use the fact that it is a symmetric matrix
             for i in tqdm(range(n)):
                 for j in range(i, n):
-                    distances[i, j] = computeDistance(node_representations[i], node_representations[j])
+                    distances[i, j] = computeDistance(
+                        node_representations[i], node_representations[j], **distance_kwargs)
                     distances[j, i] = distances[i, j]
     return distances
