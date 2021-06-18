@@ -46,10 +46,7 @@ def readArguments():
 def main():
     args = readArguments()
     # Read actual dataset (for getting basic stats like max_degree, avg_degree, ...)
-    dataset_filename = \
-        f"{'/'.join(args.node_representations_filename.split('/')[:-4])}" \
-        f"/raw/{args.node_representations_filename.split('__')[-1]}"
-    networkx_dataset = readPickle(dataset_filename)
+    networkx_dataset = readPickle(f"{'/'.join(args.node_representations_filename.split('/')[:-5])}/raw_networkx.pkl")
     ##########
     # Read the node representations
     node_representations = readPickle(args.node_representations_filename)
@@ -61,10 +58,7 @@ def main():
     })
     distances_filename = \
         f"{'/'.join(args.node_representations_filename.split('/')[:-1])}" \
-        f"/dist_matrices/{args.distance}/" \
-        f"{args.node_representations_filename.split('__')[0].split('/')[-1]}" \
-        f"__{'_'.join([k[0] + str(v).capitalize() for k, v in distance_kwargs.items()])}" \
-        f"__{args.node_representations_filename.split('__')[1]}"
+        f"/dist_matrices/{args.distance}/{'_'.join([k[0] + str(v).capitalize() for k, v in distance_kwargs.items()])}.pkl"
     if os.path.isfile(distances_filename):
         node_representations_flatten, dist_matrix = readPickle(distances_filename)
     else:

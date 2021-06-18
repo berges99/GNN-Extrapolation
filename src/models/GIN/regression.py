@@ -4,13 +4,13 @@ import torch.nn.functional as F
 from tqdm import tqdm
 
 from torch import nn
-from torch_geometric.nn import GINConv #, global_add_pool
+from torch_geometric.nn import GINConv
 
 
 
 class Net(nn.Module):
 
-    def __init__(self, num_features, hidden_dim):
+    def __init__(self, num_features=1, hidden_dim=32, residual=False, jk=False):
         super(Net, self).__init__()
 
         nn1 = nn.Sequential(nn.Linear(num_features, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, hidden_dim))
@@ -43,11 +43,11 @@ class Net(nn.Module):
         return x
 
 
-def initWeights(m):
+def initWeights(m, bias=0, lower_bound=-0.1, upper_bound=0.1):
     '''Auxiliary function that applies a uniform distribution to the weights and a bias=0.'''
     if type(m) == nn.Linear:
-        m.weight.data.uniform_(-0.3, 0.3)
-        m.bias.data.fill_(0)
+        m.weight.data.uniform_(lower_bound, upper_bound)
+        m.bias.data.fill_(bias)
 
 
 def train(model, optimizer, loader, epochs, device):

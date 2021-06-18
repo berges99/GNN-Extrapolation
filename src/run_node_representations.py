@@ -19,11 +19,8 @@ def readArguments():
     parser = argparse.ArgumentParser()
     ##########
     # Parse all the input dataset related arguments
-    # parser.add_argument(
-    #   '--fullname', '-f', type=str, default='', help='Complete relative path of the dataset to be used.')
     parser.add_argument(
-        '--path', '-p', type=str, default='../data/synthetic/preferential_attachment',
-        help='Default path to the data.')
+        '--data_path', '-f', type=str, default='', help='Complete relative path of the dataset to be used.')
     parser.add_argument(
         '--verbose', '-v', type=bool, default=True, 
         help='Whether to print the outputs through the terminal.')
@@ -59,9 +56,7 @@ def readArguments():
 
 def main():
     args = readArguments()
-    # Read the raw networkx dataset
-    dataset_filename = getLatestVersion(f'{args.path}/raw')
-    networkx_dataset = readPickle(f'{args.path}/raw/{dataset_filename}')
+    networkx_dataset = readPickle(args.data_path)
     # Fromat the data in a convenient way
     if args.embedding_scheme == 'WL':
         if args.method == 'continuous':
@@ -78,9 +73,8 @@ def main():
         k: v for k, v in args.ordered_args[node_representations_kwargs_idx + 1:]
     })
     node_representations_filename = \
-        f"{args.path}/node_representations/{args.embedding_scheme}/{args.method}/" \
-        f"{'_'.join([k[0] + str(v).capitalize() for k, v in node_representations_kwargs.items()])}" \
-        f"__{dataset_filename}"
+        f"{'/'.join(args.data_path.split('/')[:-1])}/node_representations/{args.embedding_scheme}/{args.method}/" \
+        f"{'_'.join([k[0] + str(v).capitalize() for k, v in node_representations_kwargs.items()])}/node_representations.pkl"
     if os.path.isfile(node_representations_filename):
         node_representations = readPickle(node_representations_filename)
     else:

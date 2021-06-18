@@ -57,12 +57,12 @@ def readPickle(filename):
 		return pickle.load(f)
 
 
-def getLatestVersion(filepath, filename=None, extension='.pkl'):
+def getLatestVersion(filepath, start='', end=''):
 	'''Auxiliary function that returns the latest created version at a given path.'''
-	versions = [version for version in os.listdir(filepath) if version.endswith(extension)]
-	if filename:
-		versions = [version for version in versions if version.startswith(filename)]
-	ts = np.array([int(version.rstrip(extension).split('_')[-1]) for version in versions])
+	versions = [version for version in os.listdir(filepath) if version.endswith(end)]
+	if start:
+		versions = [version for version in versions if version.startswith(start)]
+	ts = np.array([int(version.rstrip(end).split('_')[-1]) for version in versions])
 	return versions[np.argmax(ts)]
 
 

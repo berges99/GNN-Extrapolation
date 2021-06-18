@@ -79,12 +79,12 @@ def main():
 	args = readArguments()
 	if args.model == 'erdos_renyi':
 		dataset = generateGraphs(args.N, args.model, n=args.n, p=args.p)
-		filename = f"synthetic/{args.model}/raw/N{args.N}_n{'-'.join(map(str, args.n))}" \
-				   f"_p{'-'.join(map(str, args.p))}_{int(time.time())}.pkl"
+		filename = f"synthetic/{args.model}/N{args.N}_n{'-'.join(map(str, args.n))}" \
+				   f"_p{'-'.join(map(str, args.p))}_{int(time.time())}/raw_networkx.pkl"
 	else: #elif args.model == 'preferential_attachment':
 		dataset = generateGraphs(args.N, args.model, n=args.n, m=args.m)
-		filename = f"synthetic/{args.model}/raw/N{args.N}_n{'-'.join(map(str, args.n))}" \
-				   f"_m{'-'.join(map(str, args.m))}_{int(time.time())}.pkl"
+		filename = f"synthetic/{args.model}/N{args.N}_n{'-'.join(map(str, args.n))}" \
+				   f"_m{'-'.join(map(str, args.m))}_{int(time.time())}/raw_networkx.pkl"
 	# Store the dataset into memory
 	writePickle(dataset, filename=filename)
 	
