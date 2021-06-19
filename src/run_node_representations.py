@@ -24,6 +24,9 @@ def readArguments():
     parser.add_argument(
         '--verbose', '-v', type=bool, default=True, 
         help='Whether to print the outputs through the terminal.')
+    parser.add_argument(
+        '--save_file_destination', type=bool, default=False,
+        help='Whether to save the file path destination into a temporary file for later pipelined processing.')
     ##########
     # Parse all the arguments related to the embedding scheme, methods and distances
     subparsers = parser.add_subparsers(dest='embedding_scheme')
@@ -88,7 +91,13 @@ def main():
         print('Node representations:')
         print('-' * 30)
         print(node_representations)
+    return node_representations_filename if args.save_file_destination else ''
 
 
 if __name__ == '__main__':
-    main()
+    tmp_saved_filename = main()
+    # sys.exit(predictions_filename)
+    # Workaround to pass variable name to bash script...
+    if tmp_saved_filename:
+        with open('tmp_saved_filename.txt', 'w') as f:
+            f.write(tmp_saved_filename)

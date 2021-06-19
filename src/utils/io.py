@@ -8,6 +8,9 @@ from functools import wraps
 
 
 
+##########
+
+
 class KeepOrderAction(argparse.Action):
 	'''Aux class to keep the order of the arguments that are given through the terminal.'''
 	def __call__(self, parser, namespace, values, option_string=None):
@@ -18,6 +21,25 @@ class KeepOrderAction(argparse.Action):
 		setattr(namespace, 'ordered_args', previous)
 		# Maintain the values in the regular argparse labels
 		setattr(namespace, self.dest, values)
+
+
+def parameterizedKeepOrderAction(additional_arg, keep=True):
+	'''Aux wrapper to customize the name of the saved ordered arguments in the special KeepOrderAction class.'''
+	class KPA(argparse.Action):
+		'''Aux class to keep the order of the arguments that are given through the terminal.'''
+		def __call__(self, parser, namespace, values, option_string=None):
+			if not additional_arg in namespace:
+				setattr(namespace, additional_arg, [])
+			previous = getattr(namespace, additional_arg)
+			previous.append((self.dest, values))
+			setattr(namespace, additional_arg, previous)
+			# Maintain the values in the regular argparse labels
+			if keep:
+				setattr(namespace, self.dest, values)
+	return KPA
+
+
+##########
 
 
 def buildPath(f):

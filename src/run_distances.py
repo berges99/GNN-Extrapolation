@@ -28,6 +28,9 @@ def readArguments():
     parser.add_argument(
         '--verbose', '-v', type=bool, default=True, 
         help='Whether to print the outputs through the terminal.')
+    parser.add_argument(
+        '--save_file_destination', type=bool, default=False,
+        help='Whether to save the file path destination into a temporary file for later pipelined processing.')
     ##########
     # Parse all the arguments related to the distance computation
     parser.add_argument(
@@ -36,7 +39,7 @@ def readArguments():
     parser.add_argument(
         '--scaling', type=str, required='--distance hamming' in ' '.join(sys.argv),
         choices=['constant', 'maxdegree', 'avgdegree'], action=KeepOrderAction,
-        help='Apply special scaling to the distance between node representations. Available choices are [max_degree].')
+        help='Apply special scaling to the distance between node representations. Available choices are [maxdegree, avgdegree, constant].')
     parser.add_argument(
         '--relabel', type=bool, required='--distance edit' in ' '.join(sys.argv), action=KeepOrderAction,
         help='Whether to perform relabeling of the extracted rooted trees of the dataset, i.e. no relabel cost in edit distance.')
@@ -78,7 +81,13 @@ def main():
         print(f'Distance matrix: (shape = [{dist_matrix.shape}])')
         print('-' * 30)
         print(dist_matrix)
+    return distances_filename if args.save_file_destination else ''
 
 
 if __name__ == '__main__':
-    main()
+    tmp_saved_filename = main()
+    # sys.exit(predictions_filename)
+    # Workaround to pass variable name to bash script...
+    if tmp_saved_filename:
+        with open('tmp_saved_filename.txt', 'w') as f:
+            f.write(tmp_saved_filename)
