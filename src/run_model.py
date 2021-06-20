@@ -136,8 +136,8 @@ def main():
             # Resolve storage filename
             student_outputs_filename = \
                 f"{'/'.join(teacher_outputs_filename.split('/')[:-1])}/student_outputs/{args.model}/" \
-                f"{('/'.join(args.dist_matrix_filename.split('/')[-6:-3]) + '/' + '/'.join(args.dist_matrix_filename.split('/')[-2:])).replace('/', '__').rstrip('.pkl')}/" \
-                f"{args.smoothing}.pkl"
+                f"{('/'.join(args.dist_matrix_filename.split('/')[-6:-3]) + '/' + '/'.join(args.dist_matrix_filename.split('/')[-2:])).replace('/', '__').rstrip('.pkl')}" \
+                f"__{args.smoothing}.pkl"
             # Read the teacher outputs
             teacher_outputs = readPickle(teacher_outputs_filename)
             teacher_outputs_flatten = np.array([item for sublist in teacher_outputs for item in sublist])
@@ -151,7 +151,7 @@ def main():
                 print('Student outputs:')
                 print('-' * 30)
                 print(student_outputs)
-            writePickle(student_outputs, filename=student_outputs_filename)
+            writePickle([student_outputs], filename=student_outputs_filename)
     # If the model is a GNN
     else: #elif args.model != 'Baseline':
         # Resolve the model arguments
@@ -192,11 +192,11 @@ def main():
                 for _ in range(args.epochs):
                     module.train(model, optimizer, torch_dataset_loader, device)
                     student_outputs.append(module.test(model, torch_dataset_loader, device))
-                if args.verbose:
-                    print()
-                    print('Student outputs:')
-                    print('-' * 30)
-                    print(student_outputs)
+                # if args.verbose:
+                #     print()
+                #     print('Student outputs:')
+                #     print('-' * 30)
+                #     print(student_outputs)
                 student_outputs_filename = f"{student_outputs_filename_prefix}__{int(time.time() * 1000)}.pkl"
                 writePickle(student_outputs, filename=student_outputs_filename)
     ###

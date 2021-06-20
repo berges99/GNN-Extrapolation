@@ -67,12 +67,12 @@ def train(model, optimizer, loader, device):
     Returns:
         - None
     '''
-    print()
-    print('-' * 30)
-    print('Init training...')
+    # print()
+    # print('-' * 30)
+    # print('Init training...')
     model.train()
     loss = nn.MSELoss()
-    for data in tqdm(loader):
+    for data in loader:
         data = data.to(device)
         optimizer.zero_grad()
         output = loss(model(data), data.y)
@@ -92,12 +92,12 @@ def test(model, loader, device):
     Returns:
         - (np.ndarray) Predictions of the model for all the test nodes.
     '''
-    print()
-    print('-' * 30)
-    print('Predicting data...')
+    # print()
+    # print('-' * 30)
+    # print('Predicting data...')
     model.eval()
     predictions = []
-    for data in tqdm(loader):
+    for data in loader:
         data = data.to(device)
         output = model(data)
         predictions.append(output.detach().numpy().reshape(-1))

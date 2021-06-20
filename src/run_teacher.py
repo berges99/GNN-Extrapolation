@@ -122,11 +122,11 @@ def main():
         model.apply(partial(module.initWeights, **init_kwargs))
         # Make the model predict the regression outputs and save the results
         teacher_outputs = module.test(model, torch_dataset_loader, device)
-        if args.verbose:
-            print()
-            print('Teacher outputs:')
-            print('-' * 30)
-            print(teacher_outputs)
+        # if args.verbose:
+        #     print()
+        #     print('Teacher outputs:')
+        #     print('-' * 30)
+        #     print(teacher_outputs)
         writePickle(teacher_outputs, filename=teacher_outputs_filename)
     return teacher_outputs_filename if args.save_file_destination else ''
 
