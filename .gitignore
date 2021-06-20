@@ -4,3 +4,4 @@ data/datasets/
 .DS_Store
 **/*.pdf
 src/*.txt
+**/teacher_outputs/*

@@ -36,6 +36,9 @@ def readArguments():
     parser.add_argument(
         '--save_file_destination', type=bool, default=False,
         help='Whether to save the file path destination into a temporary file for later pipelined processing.')
+    parser.add_argument(
+        '--num_iterations', type=int, default=1,
+        help='Number of teacher outputs to produce with the same configuration.')
     ##########
     # Setting specific arguments
     parser.add_argument(
@@ -107,21 +110,24 @@ def main():
     if args.setting == 'classification' and args.classes:
         model_kwargs['classes'] = args.classes
     model_kwargs = resolveParameters(module.Net.__init__, model_kwargs)
-    teacher_outputs_filename = \
+    teacher_outputs_filename_prefix = \
         f"{'/'.join(args.dataset_filename.split('/')[:-1])}/teacher_outputs/{args.setting}/{args.model}/" \
         f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in model_kwargs.items()])}__" \
-        f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in init_kwargs.items()])}__{int(time.time())}/teacher_outputs.pkl"
-    # Init the model
-    model = module.Net(**model_kwargs).to(device)
-    model.apply(partial(module.initWeights, **init_kwargs))
-    # Make the model predict the regression outputs and save the results
-    teacher_outputs = module.test(model, torch_dataset_loader, device)
-    if args.verbose:
-        print()
-        print('Teacher outputs:')
-        print('-' * 30)
-        print(teacher_outputs)
-    writePickle(teacher_outputs, filename=teacher_outputs_filename)
+        f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in init_kwargs.items()])}"
+    ###
+    for _ in tqdm(range(args.num_iterations)):
+        teacher_outputs_filename = f"{teacher_outputs_filename_prefix}__{int(time.time() * 1000)}/teacher_outputs.pkl"
+        # Init the model
+        model = module.Net(**model_kwargs).to(device)
+        model.apply(partial(module.initWeights, **init_kwargs))
+        # Make the model predict the regression outputs and save the results
+        teacher_outputs = module.test(model, torch_dataset_loader, device)
+        if args.verbose:
+            print()
+            print('Teacher outputs:')
+            print('-' * 30)
+            print(teacher_outputs)
+        writePickle(teacher_outputs, filename=teacher_outputs_filename)
     return teacher_outputs_filename if args.save_file_destination else ''
 
 

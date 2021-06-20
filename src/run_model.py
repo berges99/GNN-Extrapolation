@@ -1,3 +1,4 @@
+import os
 import sys
 import time
 import torch
@@ -28,11 +29,12 @@ def readArguments():
         '--dataset_filename', type=str, # no longer required (baseline)
         help='Full relative path to the networkx dataset.')
     parser.add_argument(
-        '--teacher_outputs_filename', type=str, required=True, 
-        help='Full relative path to the teacher outputs of the given dataset.')
-    parser.add_argument(
         '--initial_relabeling', type=str, choices=['ones', 'degrees'], # no longer required (baseline)
         help='Type of labeling to be used in the case that there aren\'t any available. Available choices are [ones, degrees].')
+    parser.add_argument(
+        '--teacher_outputs_filename', type=str, required=True, 
+        help='Full relative path to the teacher outputs of the given dataset.')
+    ###
     parser.add_argument(
         '--verbose', '-v', type=bool, default=True, 
         help='Whether to print the outputs through the terminal.')
@@ -40,15 +42,10 @@ def readArguments():
         '--save_file_destination', type=bool, default=False,
         help='Whether to save the file path destination into a temporary file for later pipelined processing.')
     ##########
-    # Setting specific arguments
-    parser.add_argument(
-        '--setting', type=str, required=True, choices=['regression', 'classification'], 
-        help='Setting used for producing outputs [classification, regression].')
-    parser.add_argument(
-        '--classes', type=int, #required='--setting classification' in ' '.join(sys.argv),
-        help='Number of classes for the classification setting.')
-    ##########
     # Training specific arguments
+    parser.add_argument(
+        '--num_random_initializations', type=int, default=1,
+        help='Number of random initializations for the student network, i.e. number of trainings per teacher outputs.')
     parser.add_argument(
         '--epochs', type=int, default=3,
         help='Number of epochs of training for the chosen model.')
@@ -109,32 +106,52 @@ def resolveParameters(f, kwargs):
     return resolved_kwargs
 
 
+def resolveTeacherOutputsFilenames(path):
+    '''Auxiliary function that returns an iterable with all the involved teacher outputs.'''
+    if os.path.isdir(path):
+        teacher_outputs_filenames = [
+            f"{path}/{t_i}/teacher_outputs.pkl" for t_i in os.listdir(path)
+            if all(c.isdigit() for c in t_i[-13:])
+        ]
+    else:
+        teacher_outputs_filenames = [path]
+    return teacher_outputs_filenames
+
+
 def main():
     args = readArguments()
-    # Read the teacher outputs of the dataset
-    teacher_outputs = readPickle(args.teacher_outputs_filename)
-    student_outputs = []
+    args.setting = 'regression' if 'regression' in args.teacher_outputs_filename else 'classification'
+    if args.setting == 'classification':
+        args.classes = [int(x.lstrip('classes')) for x in args.teacher_outputs_filename.split('_') if x.startswith('classes')][0]
     # Import the model
     module = importlib.import_module(f'models.{args.model}.{args.setting}')
-    # Storage filename prefix
-    student_outputs_filename = \
-        f"{'/'.join(args.teacher_outputs_filename.split('/')[:-1])}/student_outputs/{args.model}"
     if args.model == 'Baseline':
-        # Resolve storage filename
-        student_outputs_filename = \
-            f"{student_outputs_filename}/" \
-            f"{('/'.join(args.dist_matrix_filename.split('/')[-6:-3]) + '/' + '/'.join(args.dist_matrix_filename.split('/')[-2:])).replace('/', '__').rstrip('.pkl')}/" \
-            f"{args.smoothing}.pkl"
         # Read the specified node representations
         node_representations, dist_matrix = readPickle(args.dist_matrix_filename)
         # Compute number of nodes per graph (to handle multiple sized graphs in the future)
         node_representations_idxs = np.array([len(G) for G in node_representations], dtype=int)
-        teacher_outputs_flatten = np.array([item for sublist in teacher_outputs for item in sublist])
         node_representations_flatten = np.array([item for sublist in node_representations for item in sublist])
-        _, student_outputs = module.baseline(
-            node_representations_flatten, node_representations_idxs, teacher_outputs_flatten, dist_matrix,
-            train_idxs=list(range(len(node_representations))), test_idxs=None, smoothing=args.smoothing
-        )
+        # Read the teacher outputs of the dataset (iterate through folder if necessary)
+        for teacher_outputs_filename in tqdm(resolveTeacherOutputsFilenames(args.teacher_outputs_filename)):
+            # Resolve storage filename
+            student_outputs_filename = \
+                f"{'/'.join(teacher_outputs_filename.split('/')[:-1])}/student_outputs/{args.model}/" \
+                f"{('/'.join(args.dist_matrix_filename.split('/')[-6:-3]) + '/' + '/'.join(args.dist_matrix_filename.split('/')[-2:])).replace('/', '__').rstrip('.pkl')}/" \
+                f"{args.smoothing}.pkl"
+            # Read the teacher outputs
+            teacher_outputs = readPickle(teacher_outputs_filename)
+            teacher_outputs_flatten = np.array([item for sublist in teacher_outputs for item in sublist])
+            # Predict with the baseline
+            _, student_outputs = module.baseline(
+                node_representations_flatten, node_representations_idxs, teacher_outputs_flatten, dist_matrix,
+                train_idxs=list(range(len(node_representations))), test_idxs=None, smoothing=args.smoothing
+            )
+            if args.verbose:
+                print()
+                print('Student outputs:')
+                print('-' * 30)
+                print(student_outputs)
+            writePickle(student_outputs, filename=student_outputs_filename)
     # If the model is a GNN
     else: #elif args.model != 'Baseline':
         # Resolve the model arguments
@@ -144,36 +161,45 @@ def main():
         if args.setting == 'classification' and args.classes:
             model_kwargs['classes'] = args.classes
         model_kwargs = resolveParameters(module.Net.__init__, model_kwargs)
-        # Resolve storage filename
-        student_outputs_filename = \
-            f"{student_outputs_filename}/{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in model_kwargs.items()])}__" \
-            f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in init_kwargs.items()])}__{int(time.time())}.pkl"
         # Read the dataset and convert it to torch_geometric.data
         networkx_dataset = readPickle(args.dataset_filename)
         torch_dataset = fromNetworkx2Torch(networkx_dataset, initial_relabeling=args.initial_relabeling)
-        torch_dataset = addLabels(torch_dataset, teacher_outputs)
-        ###
-        # X_train, X_test = splitData(torch_dataset)
-        # train_loader = DataLoader(X_train, batch_size=1)
-        # test_loader = DataLoader(X_test, batch_size=1)
-        ###
-        torch_dataset_loader = DataLoader(torch_dataset, batch_size=1)
-        # Init the model
-        model = module.Net(**model_kwargs).to(device)
-        model.apply(partial(module.initWeights, **init_kwargs))
-        # Train during the specified amount of epochs
-        student_outputs.append(module.test(model, torch_dataset_loader, device))
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-        for _ in range(args.epochs):
-            module.train(model, optimizer, torch_dataset_loader, device)
-            student_outputs.append(module.test(model, torch_dataset_loader, device))
+        # Read the teacher outputs of the dataset (iterate through folder if necessary)
+        for teacher_outputs_filename in tqdm(resolveTeacherOutputsFilenames(args.teacher_outputs_filename)):
+            # Resolve storage filename
+            student_outputs_filename_prefix = \
+                f"{'/'.join(teacher_outputs_filename.split('/')[:-1])}/student_outputs/{args.model}/" \
+                f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in model_kwargs.items()])}__" \
+                f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in init_kwargs.items()])}__epochs{args.epochs}"
+            # Read the teacher outputs
+            teacher_outputs = readPickle(teacher_outputs_filename)
+            # Prepare torch loader
+            torch_dataset = addLabels(torch_dataset, teacher_outputs)
+            ###
+            # X_train, X_test = splitData(torch_dataset)
+            # train_loader = DataLoader(X_train, batch_size=1)
+            # test_loader = DataLoader(X_test, batch_size=1)
+            ###
+            torch_dataset_loader = DataLoader(torch_dataset, batch_size=1)
+            # Produce as many results with as many random initializations as indicated
+            for _ in range(args.num_random_initializations):
+                # Init the model
+                model = module.Net(**model_kwargs).to(device)
+                model.apply(partial(module.initWeights, **init_kwargs))
+                # Train during the specified amount of epochs
+                student_outputs = [module.test(model, torch_dataset_loader, device)]
+                optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+                for _ in range(args.epochs):
+                    module.train(model, optimizer, torch_dataset_loader, device)
+                    student_outputs.append(module.test(model, torch_dataset_loader, device))
+                if args.verbose:
+                    print()
+                    print('Student outputs:')
+                    print('-' * 30)
+                    print(student_outputs)
+                student_outputs_filename = f"{student_outputs_filename_prefix}__{int(time.time() * 1000)}.pkl"
+                writePickle(student_outputs, filename=student_outputs_filename)
     ###
-    writePickle(student_outputs, filename=student_outputs_filename)
-    if args.verbose:
-        print()
-        print('Student outputs:')
-        print('-' * 30)
-        print(student_outputs)
     return student_outputs_filename if args.save_file_destination else ''
 
 
