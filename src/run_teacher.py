@@ -46,9 +46,9 @@ def readArguments():
         help='Number of classes for the classification setting.')
     ##########
     # Network weight initialization specific arguments
-    parser.add_argument(
-        '--init_weights', type=str, default='uniform', choices=['uniform'],
-        help='Weight initialization scheme for the chosen network architecture.')
+    # parser.add_argument(
+    #     '--init_weights', type=str, default='uniform', choices=['uniform'],
+    #     help='Weight initialization scheme for the chosen network architecture.')
     parser.add_argument(
         '--bias', type=float, action=parameterizedKeepOrderAction('init_kwargs'),
         help='Whether to include some specific bias to the linear layers of the network.')
@@ -110,7 +110,7 @@ def main():
     teacher_outputs_filename = \
         f"{'/'.join(args.dataset_filename.split('/')[:-1])}/teacher_outputs/{args.setting}/{args.model}/" \
         f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in model_kwargs.items()])}__" \
-        f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in init_kwargs.items()])}__{int(time.time())}.pkl"
+        f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in init_kwargs.items()])}__{int(time.time())}/teacher_outputs.pkl"
     # Init the model
     model = module.Net(**model_kwargs).to(device)
     model.apply(partial(module.initWeights, **init_kwargs))

@@ -75,7 +75,7 @@ def main():
                 distance_kwargs['scaling'] = 1
         dist_matrix = computeDistMatrix(
             node_representations_flatten, args.distance, nystrom=False, parallel=True, **distance_kwargs)
-        writePickle((node_representations_flatten, dist_matrix), filename=distances_filename)
+        writePickle((node_representations, dist_matrix), filename=distances_filename)
     if args.verbose:
         print()
         print(f'Distance matrix: (shape = [{dist_matrix.shape}])')

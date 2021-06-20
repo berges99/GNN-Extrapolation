@@ -12,6 +12,9 @@ class Net(nn.Module):
 
     def __init__(self, num_features=1, hidden_dim=32, residual=False, jk=False):
         super(Net, self).__init__()
+        # Additional parameters
+        self.residual = residual
+        self.jk = jk
 
         nn1 = nn.Sequential(nn.Linear(num_features, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, hidden_dim))
         self.conv1 = GINConv(nn1)
@@ -27,18 +30,19 @@ class Net(nn.Module):
 
     def forward(self, data):
         x, edge_index = data.x, data.edge_index
-
-        #residual = x
-
+        if self.residual or self.jk:
+            residual = x
         x = self.conv1(x, edge_index)
-        #x += residual
-        #residual = x
+        if self.residual:
+            x += residual
+            residual = x
         #x = self.bn1(x)
         x = self.conv2(x, edge_index)
-        #x += residual
+        if self.residual or self.jk:
+            x += residual
+            residual = x
         #x = self.bn2(x)
         x = self.conv3(x, edge_index)
-        #x += residual
         #x = self.bn3(x)
         return x
 
@@ -50,16 +54,16 @@ def initWeights(m, bias=0, lower_bound=-0.1, upper_bound=0.1):
         m.bias.data.fill_(bias)
 
 
-def train(model, optimizer, loader, epochs, device):
+def train(model, optimizer, loader, device):
     '''
     Student train function.
 
     Parameters:
-        - model: ()
+        - model: (nn.Module) Model to train on the given data.
         - optimizer: (torch.optim) Optimizer for training.
         - loader: (torch_geometric.data.dataloader.DataLoader) Torch data loader for training.
-        - epochs: (int) Number of epochs for training.
-
+        - device: (torch.device) Destination device to perform the computations.
+        
     Returns:
         - None
     '''
@@ -68,23 +72,22 @@ def train(model, optimizer, loader, epochs, device):
     print('Init training...')
     model.train()
     loss = nn.MSELoss()
-    for epoch in range(epochs):
-        print(f'Epoch {epoch + 1}')
-        for data in tqdm(loader):
-            data = data.to(device)
-            optimizer.zero_grad()
-            output = loss(model(data), data.y)
-            output.backward()
-            optimizer.step()
+    for data in tqdm(loader):
+        data = data.to(device)
+        optimizer.zero_grad()
+        output = loss(model(data), data.y)
+        output.backward()
+        optimizer.step()
 
 
 def test(model, loader, device):
     '''
-    Predict on unseen data.
+    Predict on unseen data using a given model.
 
     Parameters:
-        - model: (models.GINRegressor.GIN)
+        - model: (nn.Module) Model to test on.
         - loader: (torch_geometric.data.dataloader.DataLoader) Torch data loader for testing.
+        - device: (torch.device) Destination device to perform the computations.
 
     Returns:
         - (np.ndarray) Predictions of the model for all the test nodes.
