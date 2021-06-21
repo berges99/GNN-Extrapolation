@@ -14,15 +14,15 @@ The teacher setting ...
 
 ```bash
 python3 run_teacher.py --dataset_filename ) [DATASET_FILENAME]
-		  						     --initial_relabeling ) {'ones', 'degrees'}
-		  						     # -v | --verbose ) [VERBOSE]
-		  						     # --save_file_destination ) [SAVE_FILE_DESTINATION]
-		  						     --num_iterations ) [NUM_ITERATIONS]
-		  						     --setting ) {'regression', 'classification'}
-		  						     --classes ) [CLASSES]
-		  						     --bias ) [BIAS]
-		  						     --lower_bound ) [LOWER_BOUND]
-		  						     --upper_bound ) [UPPER_BOUND]
+                       --initial_relabeling ) {'ones', 'degrees'}
+                       # -v | --verbose ) [VERBOSE]
+                       # --save_file_destination ) [SAVE_FILE_DESTINATION]
+                       --num_iterations ) [NUM_ITERATIONS]
+                       --setting ) {'regression', 'classification'}
+                       --classes ) [CLASSES]
+                       --bias ) [BIAS]
+                       --lower_bound ) [LOWER_BOUND]
+                       --upper_bound ) [UPPER_BOUND]
                        {'GIN'} ...
 ```
 
