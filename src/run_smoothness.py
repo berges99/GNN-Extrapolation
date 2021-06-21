@@ -110,6 +110,43 @@ def computeSmoothness(L, F):
 ##########
 
 
+def evaluatePerformance(predicted_values, real_values, normalization=None):
+    '''
+    Function to evaluate the normalized root mean square error (RMSE) of some predictions.
+    ¡We assume that the predicted and real values are ordered in the same way!
+
+    Parameters:
+        - predicted_values: (np.ndarray) Array of graphs with all the predictions for all nodes.
+        - real_values: (np.ndarray) Array of graphs with all the real values for all nodes.
+
+    Returns:
+        - 
+    '''
+    # print()
+    # print('-' * 30)
+    # print('Evaluating performance...')
+    assert len(predicted_values) == len(real_values), 'Prediction dimensions do not match!'
+    # For all the graphs in the test collection
+    n = len(predicted_values)
+    rmse = 0
+    for i in range(n):
+        rmse += (predicted_values[i] - real_values[i])**2
+    rmse = np.sqrt(rmse / n)
+    # Normalize if specified (NRMSE)
+    if normalization:
+        if normalization == 'minmax':
+            rmse /= max(real_values) - min(real_values)
+        elif normalization == 'mean':
+            rmse /= np.mean(real_values)
+        else:
+            print(f'Normalization method ({normalization}) not implemented!')
+            return
+    return rmse
+
+
+##########
+
+
 def resolveTeacherOutputsFilenames(path):
     '''Auxiliary function that returns an iterable with all the involved teacher outputs.'''
     if os.path.isdir(path):
@@ -133,13 +170,14 @@ def main():
     for teacher_outputs_filename in tqdm(resolveTeacherOutputsFilenames(args.teacher_outputs_filename)):
         # Read the teacher outputs
         teacher_outputs = readPickle(teacher_outputs_filename)
+        teacher_outputs_flatten = [item for sublist in teacher_outputs for item in sublist]
         # Student outputs to process
         student_outputs_filenames = [
             f"{'/'.join(teacher_outputs_filename.split('/')[:-1])}/student_outputs/{args.model}/{x}" 
             for x in os.listdir(f"{'/'.join(teacher_outputs_filename.split('/')[:-1])}/student_outputs/{args.model}")
             if x.endswith('.pkl')
         ]
-        student_smoothness = defaultdict(lambda: defaultdict(list))
+        student_smoothness = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
         for student_outputs_filename in student_outputs_filenames:
             student_outputs = readPickle(student_outputs_filename)
             # Resolve method characteristics
@@ -148,15 +186,21 @@ def main():
             for i, student_output in enumerate(student_outputs):
                 if len(np.array(student_output).shape) == 2:
                     student_output = [item for sublist in student_output for item in sublist]
+                # Compute the root mean square error of the predictions
+                rmse = evaluatePerformance(student_output, teacher_outputs_flatten, normalization='minmax')
+                student_smoothness[k][i]['rmse'].append(rmse)
+                # Compute the smoothness of such predictions
                 student_output = np.array(student_output)[:, None]
                 smoothness = computeSmoothness(L, F=student_output)
-                student_smoothness[k][i].append(smoothness)
+                student_smoothness[k][i]['smoothness'].append(smoothness)
         # Compute mean and std deviation for all initializations
-        for k, v in student_smoothness.items():
-            for epoch, smoothness in v.items():
-                student_smoothness[k][epoch] = {
-                    'mean_smoothness': np.mean(smoothness),
-                    'std_dev_smoothness': np.std(smoothness),
+        for model, epochs in student_smoothness.items():
+            for epoch, stats in epochs.items():
+                student_smoothness[model][epoch] = {
+                    'mean_smoothness': np.mean(stats['smoothness']),
+                    'std_dev_smoothness': np.std(stats['smoothness']),
+                    'mean_rmse': np.mean(stats['rmse']),
+                    'std_dev_rmse': np.std(stats['rmse']),
                 }
             # Prepare data for pandas multiindex columns
             student_smoothness[k] = {
