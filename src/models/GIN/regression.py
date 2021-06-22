@@ -10,41 +10,37 @@ from torch_geometric.nn import GINConv
 
 class Net(nn.Module):
 
-    def __init__(self, num_features=1, hidden_dim=32, residual=False, jk=False):
+    def __init__(self, num_features=1, hidden_dim=32, blocks=3, residual=False, jk=False):
         super(Net, self).__init__()
-        # Additional parameters
+        # Additional model configurations parameters
         self.residual = residual
         self.jk = jk
-
-        nn1 = nn.Sequential(nn.Linear(num_features, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, hidden_dim))
-        self.conv1 = GINConv(nn1)
-        #self.bn1 = nn.BatchNorm1d(hidden_dim)
-
-        nn2 = nn.Sequential(nn.Linear(hidden_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, hidden_dim))
-        self.conv2 = GINConv(nn2)
-        #self.bn2 = nn.BatchNorm1d(hidden_dim)
-
-        nn3 = nn.Sequential(nn.Linear(hidden_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, 1))
-        self.conv3 = GINConv(nn3)
-        #self.bn3 = nn.BatchNorm1d(num_classes)
+        # Message passing blocks
+        self.GIN_blocks = nn.ModuleList([
+            GINConv(
+                nn.Sequential(
+                    nn.Linear(num_features if i == 0 else hidden_dim, hidden_dim), 
+                    nn.ReLU(), 
+                    nn.Linear(hidden_dim, hidden_dim)
+            ))
+            for i in range(blocks)
+        ])
+        # Final projection layer for regression
+        self.final_projection = nn.Linear(hidden_dim if not self.jk else blocks * hidden_dim, 1)
 
     def forward(self, data):
         x, edge_index = data.x, data.edge_index
-        if self.residual or self.jk:
-            residual = x
-        x = self.conv1(x, edge_index)
-        if self.residual:
-            x += residual
-            residual = x
-        #x = self.bn1(x)
-        x = self.conv2(x, edge_index)
-        if self.residual or self.jk:
-            x += residual
-            residual = x
-        #x = self.bn2(x)
-        x = self.conv3(x, edge_index)
-        #x = self.bn3(x)
-        return x
+        if self.residual: residual = x
+        if self.jk: cat = []
+        # Forward through the GIN blocks
+        for i, gin in enumerate(self.GIN_blocks):
+            x = F.relu(gin(x, edge_index))
+            if self.residual:
+                x += residual
+                residual = x
+            if self.jk: cat.append(x)
+        if self.jk: x = torch.cat(cat, dim=1)
+        return self.final_projection(x)
 
 
 def initWeights(m, bias=0, lower_bound=-0.1, upper_bound=0.1):

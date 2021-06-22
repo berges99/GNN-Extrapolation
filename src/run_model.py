@@ -85,6 +85,9 @@ def readArguments():
         '--hidden_dim', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Number of hidden neurons per hidden linear layer.')
     GIN.add_argument(
+        '--blocks', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Number of GIN blocks to include in the model.')
+    GIN.add_argument(
         '--residual', type=bool, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Whether to add residual connections in the network.')
     GIN.add_argument(
@@ -182,7 +185,7 @@ def main():
             ###
             torch_dataset_loader = DataLoader(torch_dataset, batch_size=1)
             # Produce as many results with as many random initializations as indicated
-            for _ in range(args.num_random_initializations):
+            for _ in tqdm(range(args.num_random_initializations)):
                 # Init the model
                 model = module.Net(**model_kwargs).to(device)
                 model.apply(partial(module.initWeights, **init_kwargs))
