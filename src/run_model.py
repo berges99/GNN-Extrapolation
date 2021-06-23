@@ -93,6 +93,23 @@ def readArguments():
     GIN.add_argument(
         '--jk', type=bool, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Whether to add jumping knowledge in the network.')
+    ###
+    GCN = model_subparser.add_parser('GCN', help='GCN model specific parser.')
+    GCN.add_argument(
+        '--num_features', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Number of input features per node.')
+    GCN.add_argument(
+        '--hidden_dim', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Number of hidden neurons per hidden linear layer.')
+    GCN.add_argument(
+        '--blocks', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Number of GCN blocks to include in the model.')
+    GCN.add_argument(
+        '--residual', type=bool, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Whether to add residual connections in the network.')
+    GCN.add_argument(
+        '--jk', type=bool, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Whether to add jumping knowledge in the network.')
     # TBD add more models and more parameterizations
     return parser.parse_args()
 

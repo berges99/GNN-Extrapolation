@@ -5,7 +5,9 @@ import argparse
 import numpy as np
 import pandas as pd
 
+from numba import jit
 from tqdm import tqdm
+from pathlib import Path
 from collections import defaultdict
 
 from utils.io import readPickle, writePickle
@@ -22,7 +24,7 @@ def readArguments():
         '--teacher_outputs_filename', type=str, required=True, 
         help='Full relative path to the teacher outputs of the given dataset (or parent directory path).')
     parser.add_argument(
-        '--model', type=str, required=True, choices=['Baseline', 'GIN'],
+        '--model', type=str, required=True, choices=['Baseline', 'GIN', 'GCN'],
         help='Model used for the predictions.')
     ###
     parser.add_argument(
@@ -37,20 +39,10 @@ def readArguments():
 def computeD(W):
     '''Auxiliary function to compute the diagonal matrix for a given adjacency matrix (weighted).'''
     return np.diag([np.sum(W[i, :]) for i in range(len(W))])
+    
 
-
-def auxiliaryGaussianKernel(dist, threshold=None, normalization_factor=None):
-    '''Auxiliary function that computes the thresholded Gaussian kernel weighting function.'''
-    if threshold and threshold > dist:
-        return 0
-    else:
-        if normalization_factor:
-            return np.exp(-(dist**2 / normalization_factor))
-        else:
-            return np.exp(-dist)
-
-
-def computeW(dist_matrix, threshold=None, normalization_factor=None):
+@jit(nopython=True, parallel=True)
+def computeWNumba(dist_matrix, threshold=0, normalization_factor=0):
     '''
     Function that computes the induced adjacency matrix W by the pairwise relationships/distances
     between the data points in the dataset.
@@ -63,11 +55,17 @@ def computeW(dist_matrix, threshold=None, normalization_factor=None):
     Returns:
         - (np.ndarray) Adjacency matrix induced by the pairwise distances.
     '''
-    W = np.zeros_like(dist_matrix)
-    for i in range(len(W)):
-        for j in range(len(W)):
-            W[i, j] = auxiliaryGaussianKernel(
-                dist_matrix[i, j], threshold=threshold, normalization_factor=normalization_factor)
+    n = len(dist_matrix)
+    W = np.zeros((n, n))
+    for i in range(n):
+        for j in range(n):
+            if threshold != 0 and threshold > dist_matrix[i, j]:
+                W[i, j] = 0
+            else:
+                if normalization_factor != 0:
+                    W[i, j] = np.exp(-(dist_matrix[i, j]**2 / normalization_factor))
+                else:
+                    W[i, j] = np.exp(-dist_matrix[i, j])
             W[j, i] = W[i, j]
     return W
 
@@ -164,9 +162,18 @@ def main():
     # Read the dist matrix and node representations for the specified data
     node_representations, dist_matrix = readPickle(args.dist_matrix_filename)
     # Compute the graph laplacian
-    W = computeW(dist_matrix)
+    print()
+    print('-' * 30)
+    print('Computing W...')
+    W = computeWNumba(dist_matrix)
+    print()
+    print('-' * 30)
+    print('Computing combinatorial Laplacian...')
     L = computeLaplacian(W, normalize=True)
     # Read the teacher outputs of the dataset (iterate through folder if necessary)
+    print()
+    print('-' * 30)
+    print('Iterating through different teacher outputs...')
     for teacher_outputs_filename in tqdm(resolveTeacherOutputsFilenames(args.teacher_outputs_filename)):
         # Read the teacher outputs
         teacher_outputs = readPickle(teacher_outputs_filename)
@@ -203,16 +210,19 @@ def main():
                     'std_dev_rmse': np.std(stats['rmse']),
                 }
             # Prepare data for pandas multiindex columns
-            student_smoothness[k] = {
+            student_smoothness[model] = {
                 (outer_key, inner_key): values 
-                for outer_key, inner_dict in student_smoothness[k].items() 
+                for outer_key, inner_dict in student_smoothness[model].items() 
                 for inner_key, values in inner_dict.items()
             }
         # Convert into pandas dataframe
         student_smoothness = pd.DataFrame.from_dict(student_smoothness, orient='index')
         # Store file
         student_smoothness_filename = \
-            f"{'/'.join(student_outputs_filenames[0].split('/')[:-1])}/smoothness_stats.csv"
+            f"{'/'.join(student_outputs_filenames[0].split('/')[:-1])}/smoothness/" \
+            f"{('/'.join(args.dist_matrix_filename.split('/')[-6:-3]) + '/' + '/'.join(args.dist_matrix_filename.split('/')[-2:])).replace('/', '__').rstrip('.pkl')}.csv"
+        student_smoothness_filepath = '/'.join(student_smoothness_filename.split('/')[:-1])
+        Path(student_smoothness_filepath).mkdir(parents=True, exist_ok=True)
         student_smoothness.to_csv(student_smoothness_filename)
                 
 
