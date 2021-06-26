@@ -156,7 +156,7 @@ def resolveTeacherOutputsFilenames(path):
     if os.path.isdir(path):
         teacher_outputs_filenames = [
             f"{path}/{t_i}/teacher_outputs.pkl" for t_i in os.listdir(path)
-            if all(c.isdigit() for c in t_i[-13:])
+            if all(c.isdigit() for c in t_i)
         ]
     else:
         teacher_outputs_filenames = [path]
@@ -246,11 +246,11 @@ def main():
                     print('-' * 30)
                     print(student_outputs)
                 # Save the student outputs and the trained model
-                student_outputs_filename_prefix = f"{student_outputs_filename_prefix}__{int(time.time() * 1000)}"
-                student_outputs_filename = f"{student_outputs_filename_prefix}.pkl"
-                student_outputs_filename_model = f"{student_outputs_filename_prefix}.pt"
-                # writePickle(student_outputs, filename=student_outputs_filename)
-                # torch.save(model.state_dict(), student_outputs_filename_model)
+                student_outputs_filename_prefix_ = f"{student_outputs_filename_prefix}/{int(time.time() * 1000)}"
+                student_outputs_filename = f"{student_outputs_filename_prefix_}/student_outputs.pkl"
+                student_outputs_filename_model = f"{student_outputs_filename_prefix_}/model.pt"
+                writePickle(student_outputs, filename=student_outputs_filename)
+                torch.save(model.state_dict(), student_outputs_filename_model)
     ###
     return student_outputs_filename if args.save_file_destination else ''
 

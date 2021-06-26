@@ -119,9 +119,9 @@ def main():
         f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in init_kwargs.items()])}"
     ###
     for _ in tqdm(range(args.num_iterations)):
-        teacher_outputs_filename_prefix = f"{teacher_outputs_filename_prefix}__{int(time.time() * 1000)}"
-        teacher_outputs_filename = f"{teacher_outputs_filename_prefix}/teacher_outputs.pkl"
-        teacher_outputs_filename_model = f"{teacher_outputs_filename_prefix}/model.pt"
+        teacher_outputs_filename_prefix_ = f"{teacher_outputs_filename_prefix}/{int(time.time() * 1000)}"
+        teacher_outputs_filename = f"{teacher_outputs_filename_prefix_}/teacher_outputs.pkl"
+        teacher_outputs_filename_model = f"{teacher_outputs_filename_prefix_}/model.pt"
         # Init the model
         model = module.Net(**model_kwargs).to(device)
         model.apply(partial(module.initWeights, **init_kwargs))

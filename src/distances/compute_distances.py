@@ -4,6 +4,7 @@ import numpy as np
 import multiprocessing
 
 from tqdm import tqdm
+from numba import jit
 from joblib import Parallel, delayed
 
 
@@ -21,10 +22,31 @@ def auxiliaryDistParallel(node_representations, computeDistance, **distance_kwar
     return distances
 
 
+# TBD Adapt to futer distance argument implementations (**distance_kwargs)
+@jit(nopython=True, parallel=True)
+def auxiliaryDistFullNumba(node_representations, computeDistanceNumba, scaling=0):
+    ''''''
+    n = len(node_representations)
+    distances = np.zeros((n, n))
+    for i in range(n):
+        for j in range(i, n):
+            if scaling > 0:
+                distances[i, j] = computeDistanceNumba(
+                    node_representations[i], node_representations[j], scaling)
+            else:
+                distances[i, j] = computeDistanceNumba(
+                    node_representations[i], node_representations[j])
+            distances[j, i] = distances[i, j]
+        if i % 100 == 0: print(i)
+    return distances
+
+
+
 def computeDistMatrix(node_representations,
                       distance,
                       nystrom=False, 
                       parallel=False,
+                      numba=False,
                       **distance_kwargs):
     '''
     Compute pairwise distances between all input node representations.
@@ -43,29 +65,40 @@ def computeDistMatrix(node_representations,
     print()
     print('-' * 30)
     print('Computing the pairwise distance matrix between all node representations of the dataset...')
-    n = len(node_representations)
-    distances = np.zeros((n, n))
-    # Import the method for compute the edit distance between a pair of node representations
-    computeDistance = getattr(importlib.import_module(f'distances.methods'), distance)
     # Nyström approximation
     if nystrom:
         pass
+    # Full pairwise matrix computation (exact)
     else:
-        # If parallel computation is specified
-        if parallel:
-            distances_ = \
-                (Parallel(n_jobs=NUM_CORES)
-                         (delayed(auxiliaryDistParallel)
-                         (node_representations[i:], computeDistance, **distance_kwargs) for i in tqdm(range(n))))
-            # Convert into symmetric matrix
-            for i in range(n):
-                distances[i, i:] = distances_[i]
-            distances = np.where(distances, distances, distances.T)
+        # Numba c++ vectorization
+        if numba:
+            # Convert all representations into typed np.arrays
+            node_representations = np.array([np.array(x_i, dtype=float) for x_i in node_representations], dtype=float)
+            # Import the numba-rized method
+            computeDistanceNumba = getattr(importlib.import_module(f'distances.methods'), f'{distance}Numba')
+            # Resolve extra arguments (numba/c++ do not accept python objects as arguments...)
+            scaling = 0 if distance != 'hamming' else distance_kwargs['scaling']
+            distances = auxiliaryDistFullNumba(node_representations, computeDistanceNumba, scaling=scaling)
+        # Python approach
         else:
-            # Use the fact that it is a symmetric matrix
-            for i in tqdm(range(n)):
-                for j in range(i, n):
-                    distances[i, j] = computeDistance(
-                        node_representations[i], node_representations[j], **distance_kwargs)
-                    distances[j, i] = distances[i, j]
+            n = len(node_representations)
+            distances = np.zeros((n, n))
+            computeDistance = getattr(importlib.import_module(f'distances.methods'), distance)
+            # If parallel computation is specified
+            if parallel:
+                distances_ = \
+                    (Parallel(n_jobs=NUM_CORES)
+                             (delayed(auxiliaryDistParallel)
+                             (node_representations[i:], computeDistance, **distance_kwargs) for i in tqdm(range(n))))
+                # Convert into symmetric matrix
+                for i in range(n):
+                    distances[i, i:] = distances_[i]
+                distances = np.where(distances, distances, distances.T)
+            else:
+                # Use the fact that it is a symmetric matrix
+                for i in tqdm(range(n)):
+                    for j in range(i, n):
+                        distances[i, j] = computeDistance(
+                            node_representations[i], node_representations[j], **distance_kwargs)
+                        distances[j, i] = distances[i, j]     
     return distances
