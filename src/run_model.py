@@ -208,7 +208,7 @@ def main():
                 model.apply(partial(module.initWeights, **init_kwargs))
                 # Train during the specified amount of epochs
                 student_outputs = [module.test(model, torch_dataset_loader, device)]
-                optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+                optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
                 for _ in range(args.epochs):
                     module.train(model, optimizer, torch_dataset_loader, device)
                     student_outputs.append(module.test(model, torch_dataset_loader, device))
