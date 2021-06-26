@@ -14,7 +14,7 @@ from torch import nn
 from torch_geometric.data import DataLoader
 
 from utils.convert import fromNetworkx2Torch
-from utils.io import readPickle, writePickle, parameterizedKeepOrderAction
+from utils.io import readPickle, writePickle, parameterizedKeepOrderAction, booleanString
 
 
 
@@ -31,10 +31,10 @@ def readArguments():
         '--initial_relabeling', type=str, required=True, choices=['ones', 'degrees'],
         help='Type of labeling to be used in the case that there aren\'t any available. Available choices are [ones, degrees].')
     parser.add_argument(
-        '--verbose', '-v', type=bool, default=True, 
+        '--verbose', type=booleanString, default=False, 
         help='Whether to print the outputs through the terminal.')
     parser.add_argument(
-        '--save_file_destination', type=bool, default=False,
+        '--save_file_destination', type=booleanString, default=False,
         help='Whether to save the file path destination into a temporary file for later pipelined processing.')
     parser.add_argument(
         '--num_iterations', type=int, default=1,
@@ -77,10 +77,10 @@ def readArguments():
         '--blocks', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Number of GIN blocks to include in the model.')
     GIN.add_argument(
-        '--residual', type=bool, action=parameterizedKeepOrderAction('model_kwargs'),
+        '--residual', type=booleanString, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Whether to add residual connections in the network.')
     GIN.add_argument(
-        '--jk', type=bool, action=parameterizedKeepOrderAction('model_kwargs'),
+        '--jk', type=booleanString, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Whether to add jumping knowledge in the network.')
     # TBD add more models and more parameterizations
     return parser.parse_args()
@@ -119,18 +119,22 @@ def main():
         f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in init_kwargs.items()])}"
     ###
     for _ in tqdm(range(args.num_iterations)):
-        teacher_outputs_filename = f"{teacher_outputs_filename_prefix}__{int(time.time() * 1000)}/teacher_outputs.pkl"
+        teacher_outputs_filename_prefix = f"{teacher_outputs_filename_prefix}__{int(time.time() * 1000)}"
+        teacher_outputs_filename = f"{teacher_outputs_filename_prefix}/teacher_outputs.pkl"
+        teacher_outputs_filename_model = f"{teacher_outputs_filename_prefix}/model.pt"
         # Init the model
         model = module.Net(**model_kwargs).to(device)
         model.apply(partial(module.initWeights, **init_kwargs))
         # Make the model predict the regression outputs and save the results
         teacher_outputs = module.test(model, torch_dataset_loader, device)
-        # if args.verbose:
-        #     print()
-        #     print('Teacher outputs:')
-        #     print('-' * 30)
-        #     print(teacher_outputs)
+        if args.verbose:
+            print()
+            print('Teacher outputs:')
+            print('-' * 30)
+            print(teacher_outputs)
+        # Save the teacher outputs and the model
         writePickle(teacher_outputs, filename=teacher_outputs_filename)
+        torch.save(model.state_dict(), teacher_outputs_filename_model)
     return teacher_outputs_filename if args.save_file_destination else ''
 
 

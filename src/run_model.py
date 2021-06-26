@@ -15,7 +15,7 @@ from torch import nn
 from torch_geometric.data import DataLoader
 
 from utils.convert import fromNetworkx2Torch, addLabels
-from utils.io import readPickle, writePickle, parameterizedKeepOrderAction
+from utils.io import readPickle, writePickle, parameterizedKeepOrderAction, booleanString
 
 
 
@@ -36,10 +36,10 @@ def readArguments():
         help='Full relative path to the teacher outputs of the given dataset.')
     ###
     parser.add_argument(
-        '--verbose', '-v', type=bool, default=True, 
+        '--verbose', '-v', type=booleanString, default=False, 
         help='Whether to print the outputs through the terminal.')
     parser.add_argument(
-        '--save_file_destination', type=bool, default=False,
+        '--save_file_destination', type=booleanString, default=False,
         help='Whether to save the file path destination into a temporary file for later pipelined processing.')
     ##########
     # Training specific arguments
@@ -47,7 +47,7 @@ def readArguments():
         '--num_random_initializations', type=int, default=1,
         help='Number of random initializations for the student network, i.e. number of trainings per teacher outputs.')
     parser.add_argument(
-        '--epochs', type=int, default=3,
+        '--epochs', type=int, default=10,
         help='Number of epochs of training for the chosen model.')
     ##########
     # Network weight initialization specific arguments
@@ -88,10 +88,10 @@ def readArguments():
         '--blocks', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Number of GIN blocks to include in the model.')
     GIN.add_argument(
-        '--residual', type=bool, action=parameterizedKeepOrderAction('model_kwargs'),
+        '--residual', type=booleanString, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Whether to add residual connections in the network.')
     GIN.add_argument(
-        '--jk', type=bool, action=parameterizedKeepOrderAction('model_kwargs'),
+        '--jk', type=booleanString, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Whether to add jumping knowledge in the network.')
     ###
     GCN = model_subparser.add_parser('GCN', help='GCN model specific parser.')
@@ -105,10 +105,10 @@ def readArguments():
         '--blocks', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Number of GCN blocks to include in the model.')
     GCN.add_argument(
-        '--residual', type=bool, action=parameterizedKeepOrderAction('model_kwargs'),
+        '--residual', type=booleanString, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Whether to add residual connections in the network.')
     GCN.add_argument(
-        '--jk', type=bool, action=parameterizedKeepOrderAction('model_kwargs'),
+        '--jk', type=booleanString, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Whether to add jumping knowledge in the network.')
     # TBD add more models and more parameterizations
     return parser.parse_args()
@@ -212,13 +212,17 @@ def main():
                 for _ in range(args.epochs):
                     module.train(model, optimizer, torch_dataset_loader, device)
                     student_outputs.append(module.test(model, torch_dataset_loader, device))
-                # if args.verbose:
-                #     print()
-                #     print('Student outputs:')
-                #     print('-' * 30)
-                #     print(student_outputs)
-                student_outputs_filename = f"{student_outputs_filename_prefix}__{int(time.time() * 1000)}.pkl"
+                if args.verbose:
+                    print()
+                    print('Student outputs:')
+                    print('-' * 30)
+                    print(student_outputs)
+                # Save the student outputs and the trained model
+                student_outputs_filename_prefix = f"{student_outputs_filename_prefix}__{int(time.time() * 1000)}"
+                student_outputs_filename = f"{student_outputs_filename_prefix}.pkl"
+                student_outputs_filename_model = f"{student_outputs_filename_prefix}.pt"
                 writePickle(student_outputs, filename=student_outputs_filename)
+                torch.save(model.state_dict(), student_outputs_filename_model)
     ###
     return student_outputs_filename if args.save_file_destination else ''
 

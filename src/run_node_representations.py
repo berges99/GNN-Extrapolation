@@ -7,8 +7,8 @@ import networkx as nx
 
 from collections import OrderedDict
 
-from utils.io import readPickle, writePickle, getLatestVersion, KeepOrderAction
 from utils.convert import getAdjacencyList, fromNetworkx2Torch, fromNetworkx2GraphML
+from utils.io import readPickle, writePickle, getLatestVersion, KeepOrderAction, booleanString
 
 from node_representations.compute_node_representations import computeDatasetNodeRepresentations
 
@@ -22,10 +22,10 @@ def readArguments():
     parser.add_argument(
         '--data_path', '-f', type=str, default='', help='Complete relative path of the dataset to be used.')
     parser.add_argument(
-        '--verbose', '-v', type=bool, default=True, 
+        '--verbose', '-v', type=booleanString, default=False, 
         help='Whether to print the outputs through the terminal.')
     parser.add_argument(
-        '--save_file_destination', type=bool, default=False,
+        '--save_file_destination', type=booleanString, default=False,
         help='Whether to save the file path destination into a temporary file for later pipelined processing.')
     ##########
     # Parse all the arguments related to the embedding scheme, methods and distances

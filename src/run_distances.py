@@ -8,7 +8,7 @@ import networkx as nx
 from collections import OrderedDict
 
 from utils.stats import *
-from utils.io import KeepOrderAction, readPickle, writePickle
+from utils.io import KeepOrderAction, readPickle, writePickle, booleanString
 
 from distances.compute_distances import computeDistMatrix
 
@@ -26,10 +26,10 @@ def readArguments():
         '--node_representations_filename', type=str, required=True,
         help='Full relative path to the node representations.')
     parser.add_argument(
-        '--verbose', '-v', type=bool, default=True, 
+        '--verbose', '-v', type=booleanString, default=False, 
         help='Whether to print the outputs through the terminal.')
     parser.add_argument(
-        '--save_file_destination', type=bool, default=False,
+        '--save_file_destination', type=booleanString, default=False,
         help='Whether to save the file path destination into a temporary file for later pipelined processing.')
     ##########
     # Parse all the arguments related to the distance computation
@@ -41,7 +41,7 @@ def readArguments():
         choices=['constant', 'maxdegree', 'avgdegree'], action=KeepOrderAction,
         help='Apply special scaling to the distance between node representations. Available choices are [maxdegree, avgdegree, constant].')
     parser.add_argument(
-        '--relabel', type=bool, required='--distance edit' in ' '.join(sys.argv), action=KeepOrderAction,
+        '--relabel', type=booleanString, required='--distance edit' in ' '.join(sys.argv), action=KeepOrderAction,
         help='Whether to perform relabeling of the extracted rooted trees of the dataset, i.e. no relabel cost in edit distance.')
     return parser.parse_args()
 

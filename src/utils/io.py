@@ -39,6 +39,14 @@ def parameterizedKeepOrderAction(additional_arg, keep=True):
 	return KPA
 
 
+def booleanString(string):
+	'''Auxiliary wrapper for a boolean argument for argparse.'''
+	string = string.lower()
+	if string not in {'false', 'true', '0', '1'}:
+		raise ValueError('Not a valid boolean string!')
+	return string in ['true', '1']
+
+
 ##########
 
 
