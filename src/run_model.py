@@ -12,6 +12,7 @@ from tqdm import tqdm
 from functools import partial
 
 from torch import nn
+import torch_geometric.transforms as T
 from torch_geometric.data import DataLoader
 
 from utils.convert import fromNetworkx2Torch, addLabels
@@ -110,7 +111,31 @@ def readArguments():
     GCN.add_argument(
         '--jk', type=booleanString, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Whether to add jumping knowledge in the network.')
-    # TBD add more models and more parameterizations
+    ###
+    SIGN = model_subparser.add_parser('SIGN', help='SIGN model specific parser.')
+    SIGN.add_argument(
+        '--num_features', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Number of input features per node.')
+    SIGN.add_argument(
+        '--hidden_dim', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Number of hidden neurons per hidden linear layer.')
+    SIGN.add_argument(
+        '--K', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Number of hops/layer.')
+    ###
+    SGC = model_subparser.add_parser('SGC', help='SGC model specific parser.')
+    SGC.add_argument(
+        '--num_features', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Number of input features per node.')
+    SGC.add_argument(
+        '--hidden_dim', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Number of hidden neurons per hidden linear layer.')
+    SGC.add_argument(
+        '--K', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Number of hops/layer.')
+    
+    # TBD add ChebNet
+
     return parser.parse_args()
 
 
@@ -200,6 +225,9 @@ def main():
             # train_loader = DataLoader(X_train, batch_size=1)
             # test_loader = DataLoader(X_test, batch_size=1)
             ###
+            if args.model == 'SIGN':
+                transform = T.Compose([T.NormalizeFeatures(), T.SIGN(model_kwargs['K'])])
+                torch_dataset = [transform(G) for G in torch_dataset]
             torch_dataset_loader = DataLoader(torch_dataset, batch_size=1)
             # Produce as many results with as many random initializations as indicated
             for _ in tqdm(range(args.num_random_initializations)):
@@ -221,8 +249,8 @@ def main():
                 student_outputs_filename_prefix = f"{student_outputs_filename_prefix}__{int(time.time() * 1000)}"
                 student_outputs_filename = f"{student_outputs_filename_prefix}.pkl"
                 student_outputs_filename_model = f"{student_outputs_filename_prefix}.pt"
-                writePickle(student_outputs, filename=student_outputs_filename)
-                torch.save(model.state_dict(), student_outputs_filename_model)
+                # writePickle(student_outputs, filename=student_outputs_filename)
+                # torch.save(model.state_dict(), student_outputs_filename_model)
     ###
     return student_outputs_filename if args.save_file_destination else ''
 

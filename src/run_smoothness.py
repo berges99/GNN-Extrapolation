@@ -10,7 +10,7 @@ from tqdm import tqdm
 from pathlib import Path
 from collections import defaultdict
 
-from utils.io import readPickle, writePickle
+from utils.io import readPickle, writePickle, booleanString
 
 
 
@@ -28,7 +28,7 @@ def readArguments():
         help='Model used for the predictions.')
     ###
     parser.add_argument(
-        '--verbose', '-v', type=bool, default=True, 
+        '--verbose', '-v', type=booleanString, default=False, 
         help='Whether to print the outputs through the terminal.')
     return parser.parse_args()
 
