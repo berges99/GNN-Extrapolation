@@ -13,9 +13,6 @@ from utils.io import KeepOrderAction, readPickle, writePickle, booleanString
 from distances.compute_distances import computeDistMatrix
 
 
-#from models.Baseline.compute_distances import computeDistMatrix
-
-
 
 
 def readArguments():
@@ -60,8 +57,8 @@ def main():
         k: v for k, v in args.ordered_args[distance_kwargs_idx + 1:]
     })
     distances_filename = \
-        f"{'/'.join(args.node_representations_filename.split('/')[:-1])}" \
-        f"/dist_matrices/{args.distance}/{'_'.join([k[0] + str(v).capitalize() for k, v in distance_kwargs.items()])}.pkl"
+        f"{'/'.join(args.node_representations_filename.split('/')[:-1])}/dist_matrices/{args.distance}/" \
+        f"distance_{'_'.join([k[0] + str(v).capitalize() for k, v in distance_kwargs.items()])}.pkl"
     if os.path.isfile(distances_filename):
         node_representations_flatten, dist_matrix = readPickle(distances_filename)
     else:
@@ -74,7 +71,9 @@ def main():
             else:
                 distance_kwargs['scaling'] = 1
         dist_matrix = computeDistMatrix(
-            node_representations_flatten, args.distance, nystrom=False, parallel=True, numba=True, **distance_kwargs)
+            node_representations_flatten, args.distance, nystrom=False, 
+            pytorch=True, numba=False, parallel=False, **distance_kwargs
+        )
         writePickle((node_representations, dist_matrix), filename=distances_filename)
     if args.verbose:
         print()

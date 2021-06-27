@@ -29,6 +29,7 @@ def edit(T1, T2, relabel=True):
 ##########
 
 
+# TBD Add normalization
 def hamming(repr1, repr2, scaling=None):
     '''
     The hamming distance between two inputs of equal length is the number of positions
@@ -53,7 +54,7 @@ def hamming(repr1, repr2, scaling=None):
 
 
 @jit(nopython=True)
-def hammingNumba(repr1, repr2, scaling=0):
+def hammingNumba(repr1, repr2, alphas, normalize=True):
     '''
     The hamming distance between two inputs of equal length is the number of positions
     at which these inputs vary.
@@ -66,11 +67,14 @@ def hammingNumba(repr1, repr2, scaling=0):
         - (float) Distance between the two given inputs.
     '''
     n = len(repr1)
-    alphas = np.ones(n)
-    if scaling:
-        for i in range(1, n):
-            alphas[i] = alphas[i - 1] / scaling
-    return alphas @ np.where(repr1 != repr2, 1.0, 0.0)
+    # alphas = scaling if scaling else np.ones(n)
+    # if scaling:
+    #     for i in range(1, n):
+    #         alphas[i] = alphas[i - 1] / scaling
+    if normalize:
+        return alphas @ np.where(repr1 != repr2, 1 / n, 0.0)
+    else:
+        return alphas @ np.where(repr1 != repr2, 1.0, 0.0)
 
 
 ##########
@@ -90,7 +94,7 @@ def l1(repr1, repr2):
     return np.linalg.norm((repr1 - repr2), ord=1)
 
 @jit(nopython=True)
-def l1Numba(repr1, repr2):
+def l1Numba(repr1, repr2, aplhas):
     '''
     The l1 distance is the sum of absolute difference between the measures in all 
     dimensions of two points.
@@ -122,7 +126,7 @@ def l2(repr1, repr2):
 
 
 @jit(nopython=True)
-def l2Numba(repr1, repr2):
+def l2Numba(repr1, repr2, alphas):
     '''
     The l2 distance or Euclidean distance between two points in Euclidean space is the 
     length of a line segment between the two points.
