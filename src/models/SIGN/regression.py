@@ -16,7 +16,7 @@ class Net(nn.Module):
 
     for i in {1, ..., K} and saves them in data.x1, data.x2, ...
     '''
-    def __init__(self, num_features=1, hidden_dim=1024, K=3):
+    def __init__(self, num_features=1, hidden_dim=32, K=3):
         super(Net, self).__init__()
         # Linear layers
         self.K = K

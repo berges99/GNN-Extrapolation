@@ -15,7 +15,7 @@ from torch import nn
 import torch_geometric.transforms as T
 from torch_geometric.data import DataLoader
 
-from utils.convert import fromNetworkx2Torch, addLabels
+from utils.convert import fromNetworkx2Torch, addLabels, expandCompressedDistMatrix
 from utils.io import readPickle, writePickle, parameterizedKeepOrderAction, booleanString
 
 
@@ -71,13 +71,27 @@ def readArguments():
     ###
     Baseline = model_subparser.add_parser('Baseline', help='Baseline model specific parser.')
     Baseline.add_argument(
-        '--smoothing', type=str, required='Baseline' in sys.argv, 
-        choices=['none', 'knn', 'heat_kernel', 'approx_pagerank'],
-        help='Type of smoothing to apply to the baseline model.')
-    Baseline.add_argument(
         '--dist_matrix_filename', type=str, required='Baseline' in sys.argv,
         help='Full relative path to the node representations to be used by the baseline method.')
+    Baseline.add_argument(
+        '--method', type=str, required='Baseline' in sys.argv, choices=['baseline', 'knn'],
+        help='Type of smoothing to apply to the baseline model.')
     ###
+    Baseline.add_argument(
+        '--smoothing', type=str, required='Baseline' in sys.argv, choices=['none', 'tikhonov', 'heat_kernel', 'pagerank_kernel'],
+        help='Full relative path to the node representations to be used by the baseline method.')
+    Baseline.add_argument(
+        '--gamma', type=float, required='--smoothing tikhonov' in ' '.join(sys.argv),
+        action=parameterizedKeepOrderAction('smoothing_kwargs'),
+        help='Gamma parameter for the Tikhonov regularization.')
+    Baseline.add_argument(
+        '--tau', type=float, required='--smoothing heat_kernel' in ' '.join(sys.argv),
+        action=parameterizedKeepOrderAction('smoothing_kwargs'),
+        help='Tau parameter for the heat kernel.')
+
+    # TBD Implement the approximate pagerank kernel
+
+    ##########
     GIN = model_subparser.add_parser('GIN', help='GIN model specific parser.')
     GIN.add_argument(
         '--num_features', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
@@ -165,14 +179,19 @@ def resolveTeacherOutputsFilenames(path):
 
 def main():
     args = readArguments()
+    # Resolve regression vs classification setting
     args.setting = 'regression' if 'regression' in args.teacher_outputs_filename else 'classification'
     if args.setting == 'classification':
         args.classes = [int(x.lstrip('classes')) for x in args.teacher_outputs_filename.split('_') if x.startswith('classes')][0]
     # Import the model
     module = importlib.import_module(f'models.{args.model}.{args.setting}')
     if args.model == 'Baseline':
+        # Resolve smoothing keyword arguments
+        smoothing_kwargs = {k: v for k, v in args.smoothing_kwargs} if 'smoothing_kwargs' in vars(args) else {}
         # Read the specified node representations
         node_representations, dist_matrix = readPickle(args.dist_matrix_filename)
+        # Expand the compressed distance matrix
+        dist_matrix = expandCompressedDistMatrix(dist_matrix)
         # Compute number of nodes per graph (to handle multiple sized graphs in the future)
         node_representations_idxs = np.array([len(G) for G in node_representations], dtype=int)
         node_representations_flatten = np.array([item for sublist in node_representations for item in sublist])
@@ -182,20 +201,26 @@ def main():
             student_outputs_filename = \
                 f"{'/'.join(teacher_outputs_filename.split('/')[:-1])}/student_outputs/{args.model}/" \
                 f"{('/'.join(args.dist_matrix_filename.split('/')[-6:-3]) + '/' + '/'.join(args.dist_matrix_filename.split('/')[-2:])).replace('/', '__').rstrip('.pkl')}" \
-                f"__{args.smoothing}.pkl"
+                f"__{args.method}_s{args.smoothing.capitalize()}"
+            if smoothing_kwargs:
+                student_outputs_filename = \
+                    f"{student_outputs_filename}_{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in smoothing_kwargs.items()])}"
+            student_outputs_filename = f"{student_outputs_filename}.pkl"
             # Read the teacher outputs
             teacher_outputs = readPickle(teacher_outputs_filename)
             teacher_outputs_flatten = np.array([item for sublist in teacher_outputs for item in sublist])
-            # Predict with the baseline
-            _, student_outputs = module.baseline(
+            # Predict with the baseline (predict on all the training set) -> list(range(len(node_representations)))
+            _, student_outputs = module.Baseline(
                 node_representations_flatten, node_representations_idxs, teacher_outputs_flatten, dist_matrix,
-                train_idxs=list(range(len(node_representations))), test_idxs=None, smoothing=args.smoothing
+                train_idxs=list(range(len(node_representations))), test_idxs=None, 
+                method=args.method, smoothing='none', **smoothing_kwargs #smoothing=args.smoothing
             )
             if args.verbose:
                 print()
                 print('Student outputs:')
                 print('-' * 30)
                 print(student_outputs)
+                print(student_outputs_filename)
             writePickle([student_outputs], filename=student_outputs_filename)
     # If the model is a GNN
     else: #elif args.model != 'Baseline':
@@ -251,7 +276,6 @@ def main():
                 student_outputs_filename_model = f"{student_outputs_filename_prefix_}/model.pt"
                 writePickle(student_outputs, filename=student_outputs_filename)
                 torch.save(model.state_dict(), student_outputs_filename_model)
-    ###
     return student_outputs_filename if args.save_file_destination else ''
 
 

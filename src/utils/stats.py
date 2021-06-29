@@ -25,14 +25,14 @@ def evaluatePerformance(predicted_values, real_values, normalization=None):
 	Returns:
 		- 
 	'''
-	print()
-	print('-' * 30)
-	print('Evaluating performance...')
+	# print()
+	# print('-' * 30)
+	# print('Evaluating performance...')
 	assert len(predicted_values) == len(real_values), 'Prediction dimensions do not match!'
 	# For all the graphs in the test collection
 	n = len(predicted_values)
 	rmse = 0
-	for i in tqdm(range(n)):
+	for i in range(n): #tqdm()
 		rmse += (predicted_values[i] - real_values[i])**2
 	rmse = np.sqrt(rmse / n)
 	# Normalize if specified (NRMSE)

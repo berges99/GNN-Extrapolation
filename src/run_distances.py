@@ -14,7 +14,6 @@ from distances.compute_distances import computeDistMatrix
 
 
 
-
 def readArguments():
     '''Auxiliary function to parse the arguments passed to the script.'''
     parser = argparse.ArgumentParser()

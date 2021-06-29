@@ -1,5 +1,6 @@
 import os
 import torch
+import scipy
 import numpy as np
 import networkx as nx
 
@@ -85,3 +86,16 @@ def addLabels(dataset, labels):
 
 def fromAPTED2NTK():
     pass
+
+
+def expandCompressedDistMatrix(dist_matrix):
+    '''
+    Expand a compressed pairwise distance matrix.
+
+    Parameters:
+        - dist_matrix: (np.array) 1/2 * n (n - 1) 1d array with the pairwise distances.
+
+    Returns:
+        - (np.ndarray) Full symmetric matrix induced by the input vector.
+    '''
+    return scipy.spatial.distance.squareform(dist_matrix)
