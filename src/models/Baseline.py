@@ -61,8 +61,9 @@ def Baseline(node_representations_flatten,
              dist_matrix, 
              train_idxs, 
              test_idxs=None,
-             method='baseline',
-             smoothing='none',
+             num_outputs=1, # This parameter implicitly indicates the setting
+             method='knn',
+             smoothing=None,
              **smoothing_kwargs):
     '''
     Implementation of the baseline model. It gives student_outputs for the test data based on node representation
@@ -107,7 +108,7 @@ def Baseline(node_representations_flatten,
         dist_matrix, teacher_outputs_flatten, test_node_idxs, method=method)
     ##########
     # Smooth the baseline with some kernels if necessary
-    if smoothing != 'none':
+    if smoothing:
         student_outputs = smoothBaseline(
             dist_matrix, student_outputs, test_node_idxs, smoothing=smoothing, **smoothing_kwargs)
     return np.array(test_node_idxs), np.array(student_outputs)

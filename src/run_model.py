@@ -15,6 +15,7 @@ from torch import nn
 import torch_geometric.transforms as T
 from torch_geometric.data import DataLoader
 
+from utils.training import *
 from utils.convert import fromNetworkx2Torch, addLabels, expandCompressedDistMatrix
 from utils.io import readPickle, writePickle, parameterizedKeepOrderAction, booleanString
 
@@ -78,7 +79,7 @@ def readArguments():
         help='Type of smoothing to apply to the baseline model.')
     ###
     Baseline.add_argument(
-        '--smoothing', type=str, required='Baseline' in sys.argv, choices=['none', 'tikhonov', 'heat_kernel', 'pagerank_kernel'],
+        '--smoothing', type=str, choices=['tikhonov', 'heat_kernel', 'pagerank_kernel'],
         help='Full relative path to the node representations to be used by the baseline method.')
     Baseline.add_argument(
         '--gamma', type=float, required='--smoothing tikhonov' in ' '.join(sys.argv),
@@ -136,6 +137,9 @@ def readArguments():
     SIGN.add_argument(
         '--K', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Number of hops/layer.')
+    SIGN.add_argument(
+        '--pre_linear', type=booleanString, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Whether to individually apply linear projections to each of the input channels.')
     ###
     SGC = model_subparser.add_parser('SGC', help='SGC model specific parser.')
     SGC.add_argument(
@@ -147,9 +151,24 @@ def readArguments():
     SGC.add_argument(
         '--K', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Number of hops/layer.')
-    
-    # TBD add ChebNet
-
+    ###
+    ChebNet = model_subparser.add_parser('ChebNet', help='ChebNet model specific parser.')
+    ChebNet.add_argument(
+        '--num_features', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Number of input features per node.')
+    ChebNet.add_argument(
+        '--hidden_dim', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Number of hidden neurons per hidden linear layer.')
+    ChebNet.add_argument(
+        '--blocks', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Number of ChebNet blocks to include in the model.')
+    ChebNet.add_argument(
+        '--K', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Chebyshev filter size K (order of the polynomial).')
+    ChebNet.add_argument(
+        '--normalization', type=str, action=parameterizedKeepOrderAction('model_kwargs'),
+        choices=['sym', 'rw'], help='The normalization scheme for the graph Laplacian.')
+    ###
     return parser.parse_args()
 
 
@@ -182,10 +201,10 @@ def main():
     # Resolve regression vs classification setting
     args.setting = 'regression' if 'regression' in args.teacher_outputs_filename else 'classification'
     if args.setting == 'classification':
-        args.classes = [int(x.lstrip('classes')) for x in args.teacher_outputs_filename.split('_') if x.startswith('classes')][0]
-    # Import the model
-    module = importlib.import_module(f'models.{args.model}.{args.setting}')
+        args.classes = int(args.teacher_outputs_filename.split('/classification/')[-1].split('/')[0])
     if args.model == 'Baseline':
+        # Import the model
+        Baseline = getattr(importlib.import_module(f'models.{args.model}'), 'Baseline')
         # Resolve smoothing keyword arguments
         smoothing_kwargs = {k: v for k, v in args.smoothing_kwargs} if 'smoothing_kwargs' in vars(args) else {}
         # Read the specified node representations
@@ -201,7 +220,7 @@ def main():
             student_outputs_filename = \
                 f"{'/'.join(teacher_outputs_filename.split('/')[:-1])}/student_outputs/{args.model}/" \
                 f"{('/'.join(args.dist_matrix_filename.split('/')[-6:-3]) + '/' + '/'.join(args.dist_matrix_filename.split('/')[-2:])).replace('/', '__').rstrip('.pkl')}" \
-                f"__{args.method}_s{args.smoothing.capitalize()}"
+                f"__{args.method}_s{str(args.smoothing).capitalize()}"
             if smoothing_kwargs:
                 student_outputs_filename = \
                     f"{student_outputs_filename}_{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in smoothing_kwargs.items()])}"
@@ -210,10 +229,10 @@ def main():
             teacher_outputs = readPickle(teacher_outputs_filename)
             teacher_outputs_flatten = np.array([item for sublist in teacher_outputs for item in sublist])
             # Predict with the baseline (predict on all the training set) -> list(range(len(node_representations)))
-            _, student_outputs = module.Baseline(
+            _, student_outputs = Baseline(
                 node_representations_flatten, node_representations_idxs, teacher_outputs_flatten, dist_matrix,
-                train_idxs=list(range(len(node_representations))), test_idxs=None, 
-                method=args.method, smoothing='none', **smoothing_kwargs #smoothing=args.smoothing
+                train_idxs=list(range(len(node_representations))), test_idxs=None, num_outputs=1 if args.setting == 'regression' else args.classes,
+                method=args.method, smoothing=None, **smoothing_kwargs #smoothing=args.smoothing
             )
             if args.verbose:
                 print()
@@ -224,13 +243,15 @@ def main():
             writePickle([student_outputs], filename=student_outputs_filename)
     # If the model is a GNN
     else: #elif args.model != 'Baseline':
+        # Import the model
+        Net = getattr(importlib.import_module(f'models.{args.model}'), 'Net')
         # Resolve the model arguments
         init_kwargs = {k: v for k, v in args.init_kwargs} if 'init_kwargs' in vars(args) else {}
-        init_kwargs = resolveParameters(module.initWeights, init_kwargs)
+        init_kwargs = resolveParameters(initWeights, init_kwargs)
         model_kwargs = {k: v for k, v in args.model_kwargs} if 'model_kwargs' in vars(args) else {}
         if args.setting == 'classification' and args.classes:
-            model_kwargs['classes'] = args.classes
-        model_kwargs = resolveParameters(module.Net.__init__, model_kwargs)
+            model_kwargs['num_outputs'] = args.classes
+        model_kwargs = resolveParameters(Net.__init__, model_kwargs)
         # Read the dataset and convert it to torch_geometric.data
         networkx_dataset = readPickle(args.dataset_filename)
         torch_dataset = fromNetworkx2Torch(networkx_dataset, initial_relabeling=args.initial_relabeling)
@@ -239,7 +260,7 @@ def main():
             # Resolve storage filename
             student_outputs_filename_prefix = \
                 f"{'/'.join(teacher_outputs_filename.split('/')[:-1])}/student_outputs/{args.model}/" \
-                f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in model_kwargs.items()])}__" \
+                f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in model_kwargs.items() if k not in ['num_features', 'num_outputs']])}__" \
                 f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in init_kwargs.items()])}__epochs{args.epochs}"
             # Read the teacher outputs
             teacher_outputs = readPickle(teacher_outputs_filename)
@@ -253,18 +274,31 @@ def main():
             if args.model == 'SIGN':
                 transform = T.Compose([T.NormalizeFeatures(), T.SIGN(model_kwargs['K'])])
                 torch_dataset = [transform(G) for G in torch_dataset]
+            elif args.model == 'ChebNet':
+                # Init transform that obtains the highest eigenvalue of the graph Laplacian given by 
+                # torch_geometric.utils.get_laplacian()
+                transform = T.Compose([T.LaplacianLambdaMax(
+                    normalization=model_kwargs['normalization'], is_undirected=True)])
+                torch_dataset = [transform(G) for G in torch_dataset]
             torch_dataset_loader = DataLoader(torch_dataset, batch_size=1)
             # Produce as many results with as many random initializations as indicated
             for _ in tqdm(range(args.num_random_initializations)):
                 # Init the model
-                model = module.Net(**model_kwargs).to(device)
-                model.apply(partial(module.initWeights, **init_kwargs))
+                model = Net(**model_kwargs).to(device)
+                model.apply(partial(initWeights, **init_kwargs))
                 # Train during the specified amount of epochs
-                student_outputs = [module.test(model, torch_dataset_loader, device)]
-                optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-                for _ in range(args.epochs):
-                    module.train(model, optimizer, torch_dataset_loader, device)
-                    student_outputs.append(module.test(model, torch_dataset_loader, device))
+                if args.setting == 'regression':
+                    student_outputs = [test_regression(model, torch_dataset_loader, device)]
+                    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+                    for _ in range(args.epochs):
+                        train_regression(model, optimizer, torch_dataset_loader, device)
+                        student_outputs.append(test_regression(model, torch_dataset_loader, device))
+                else: #elif args.setting == 'classification':
+                    student_outputs = [test_classification(model, torch_dataset_loader, device)]
+                    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+                    for _ in range(args.epochs):
+                        train_classification(model, optimizer, torch_dataset_loader, device)
+                        student_outputs.append(test_classification(model, torch_dataset_loader, device))
                 if args.verbose:
                     print()
                     print('Student outputs:')

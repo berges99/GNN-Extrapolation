@@ -19,8 +19,8 @@ from utils.io import readPickle, writePickle, booleanString
 
 # Available implemented methods (fetch all implemented methods in the models subfolder)
 IMPLEMENTED_MODELS = [
-    m for m in os.listdir('models')
-    if os.path.isdir(f'models/{m}') and m[0].isupper()
+    m.rstrip('.py') for m in os.listdir('models')
+    if os.path.isfile(f'models/{m}') and m[0].isupper() and m.endswith('.py')
 ]
 
 

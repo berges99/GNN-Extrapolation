@@ -13,6 +13,7 @@ from functools import partial
 from torch import nn
 from torch_geometric.data import DataLoader
 
+from utils.training import *
 from utils.convert import fromNetworkx2Torch
 from utils.io import readPickle, writePickle, parameterizedKeepOrderAction, booleanString
 
@@ -45,7 +46,7 @@ def readArguments():
         '--setting', type=str, required=True, choices=['regression', 'classification'], 
         help='Setting used for producing outputs [classification, regression].')
     parser.add_argument(
-        '--classes', type=int, #required='--setting classification' in ' '.join(sys.argv),
+        '--classes', type=int, required='--setting classification' in ' '.join(sys.argv),
         help='Number of classes for the classification setting.')
     ##########
     # Network weight initialization specific arguments
@@ -105,28 +106,34 @@ def main():
     torch_dataset = fromNetworkx2Torch(networkx_dataset, initial_relabeling=args.initial_relabeling)
     torch_dataset_loader = DataLoader(torch_dataset, batch_size=1)
     # Import the model
-    module = importlib.import_module(f'models.{args.model}.{args.setting}')
-    # Resolve function parameters
+    Net = getattr(importlib.import_module(f'models.{args.model}'), 'Net')
+    # Resolve initialization parameters
     init_kwargs = {k: v for k, v in args.init_kwargs} if 'init_kwargs' in vars(args) else {}
-    init_kwargs = resolveParameters(module.initWeights, init_kwargs)
+    init_kwargs = resolveParameters(initWeights, init_kwargs)
+    # Resolve model parameters and teacher filename
+    teacher_outputs_filename_prefix = \
+        f"{'/'.join(args.dataset_filename.split('/')[:-1])}/teacher_outputs/{args.setting}"
     model_kwargs = {k: v for k, v in args.model_kwargs} if 'model_kwargs' in vars(args) else {}
     if args.setting == 'classification' and args.classes:
-        model_kwargs['classes'] = args.classes
-    model_kwargs = resolveParameters(module.Net.__init__, model_kwargs)
+        teacher_outputs_filename_prefix = f"{teacher_outputs_filename_prefix}/{args.classes}"
+        model_kwargs['num_outputs'] = args.classes
+    model_kwargs = resolveParameters(Net.__init__, model_kwargs)
     teacher_outputs_filename_prefix = \
-        f"{'/'.join(args.dataset_filename.split('/')[:-1])}/teacher_outputs/{args.setting}/{args.model}/" \
-        f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in model_kwargs.items()])}__" \
-        f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in init_kwargs.items()])}"
-    ###
+        f"{teacher_outputs_filename_prefix}/{args.model}/" \
+        f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in model_kwargs.items() if k not in ['num_features', 'num_outputs']])}__" \
+        f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in init_kwargs.items()])}"   
     for _ in tqdm(range(args.num_iterations)):
         teacher_outputs_filename_prefix_ = f"{teacher_outputs_filename_prefix}/{int(time.time() * 1000)}"
         teacher_outputs_filename = f"{teacher_outputs_filename_prefix_}/teacher_outputs.pkl"
         teacher_outputs_filename_model = f"{teacher_outputs_filename_prefix_}/model.pt"
         # Init the model
-        model = module.Net(**model_kwargs).to(device)
-        model.apply(partial(module.initWeights, **init_kwargs))
+        model = Net(**model_kwargs).to(device)
+        model.apply(partial(initWeights, **init_kwargs))
         # Make the model predict the regression outputs and save the results
-        teacher_outputs = module.test(model, torch_dataset_loader, device)
+        if args.setting == 'regression':
+            teacher_outputs = test_regression(model, torch_dataset_loader, device)
+        else: #elif args.setting == 'classification':
+            teacher_outputs = test_classification(model, torch_dataset_loader, device)
         if args.verbose:
             print()
             print('Teacher outputs:')
