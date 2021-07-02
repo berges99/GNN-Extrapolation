@@ -1,71 +1,41 @@
 import time
-import torch
-import scipy
-import importlib
 import numpy as np
-import multiprocessing
+import scipy as sp
+import tables as tb
 
-from tqdm import tqdm
-from numba import jit
-from joblib import Parallel, delayed
-
+from pathlib import Path
 
 
-NUM_CORES = multiprocessing.cpu_count()
+
+MAX_MEMORY = 10 # GB
+MAX_DISK_STORAGE = 1_000 # GB
 
 
-def auxiliaryDistParallel(node_representations, computeDistance, **distance_kwargs):
-    '''Auxiliary function that computes the pairwise distances for a single vector.'''
-    n = len(node_representations)
-    distances = np.zeros(n - 1)
-    for j in range(1, n):
-        distances[j] = computeDistance(
-            node_representations[0], node_representations[j], **distance_kwargs)
-    return distances
-
-
-def auxiliaryDistFull(node_representations, computeDistance, **distance_kwargs):
-    '''Auxiliary function that computes all the pairswise distances in the given input list.'''
-    n = len(node_representations)
-    distances = np.zeros(int(0.5 * n * (n - 1)))
-    idx = 0
-    for i in tqdm(range(n)):
-        for j in range(i + 1, n):
-            distances[idx] = computeDistance(
-                node_representations[i], node_representations[j], **distance_kwargs)
-            idx += 1
-    return distances
-
-
-# TBD Adapt to futer distance argument implementations (**distance_kwargs)
-# Adapted numba-rized methods to accept extra parameter *alphas* !!!
-@jit(nopython=True, parallel=True)
-def auxiliaryDistFullNumba(node_representations, computeDistanceNumba, scaling=0):
-    ''''''
-    n = len(node_representations)
-    distances = np.zeros(int(0.5 * n * (n - 1)))
-    # Precompute weights
-    alphas = np.ones(len(node_representations[0]))
-    if scaling > 0:
-        for i in range(1, len(alphas)):
-            alphas[i] = alphas[i - 1] / scaling
-    # Compute all the distance matrix
-    idx = 0
-    for i in range(n):
-        for j in range(i + 1, n):
-            distances[idx] = computeDistanceNumba(
-                node_representations[i], node_representations[j], alphas)
-            idx += 1
-        if i % 100 == 0: print(i)
-    return distances
+def resolveDistanceKwargs(distance, m, distance_kwargs):
+    '''Auxiliary funtion to resolve the input keyword arguments to the main function, and 
+       return interpretable kwargs for scipy.spatial.distance.cdist().'''
+    cdist_kwargs = {}
+    if distance == 'l2':
+        cdist_kwargs['metric'] = 'euclidean'
+    elif distance == 'l1':
+        cdist_kwargs['metric'] = 'minkowski'
+        cdist_kwargs['p'] = 1
+    else:
+        cdist_kwargs['metric'] = 'hamming'
+        if 'scaling' in distance_kwargs:
+            alphas = np.ones(m)
+            for i in range(1, m):
+                alphas[i] = alphas[i - 1] / distance_kwargs['scaling']
+            cdist_kwargs['w'] = alphas
+    return cdist_kwargs
 
 
 def computeDistMatrix(node_representations,
                       distance,
+                      save_destination,
                       nystrom=False,
-                      pytorch=True,
-                      numba=False,
-                      parallel=False,
+                      float_precision=64,
+                      output_format='npz',
                       **distance_kwargs):
     '''
     Compute pairwise distances between all input node representations.
@@ -74,70 +44,64 @@ def computeDistMatrix(node_representations,
         - node_representations: (array_like) List with all node representations given in the correct format
                                              for the desired distance (flattened array).
         - distance: (str) Name of the distance to be used.
+        - save_destination: (str) Path to where the resulting distance matrix is going to be stored.
         - nystrom: (bool) Whether to use the nyström approximation for computing the kernel.
-        - pytorch: (bool) Whether to use existing scipy/torch implementations for the "simple" distances.
-        - numba: (bool) Whether to vectorize the python code into C++ with numba package.
-        - parallel: (bool) Whether to parallelize the matrix computation in the CPU.
-        - (**distance_kwargs) Additional specific arguments for the chosen distance metric.
+        - output_format: (str)
+        - float_precision: (int)
+        (**distance_kwargs) Additional specific arguments for the chosen distance metric.
 
     Returns:
-        - (np.array) 1d-array with length 1/2 * n * (n - 1) representing the condensed pairwise distance matrix.
+        -
     '''
-    print()
-    print('-' * 30)
-    print('Computing the pairwise distance matrix between all node representations of the dataset...')
-    # Nyström approximation
+    assert output_format in ['npz', 'h5'], 'Output format must be either "npy" or "h5"!'
+    assert float_precision in [32, 64], 'Float precision must be either 32 or 64 bits!'
+    dtype = np.float32 if float_precision == 32 else np.float64
+    # Convert all representations into typed np.ndarrays
+    node_representations = np.array([
+        np.array(x_i, dtype=dtype) for x_i in node_representations], dtype=dtype)
+    # num total representations & dimension of the representations
+    n, m = node_representations.shape
+    # If Nyström is specified
     if nystrom:
-        pass
-    # Full pairwise matrix computation (exact)
+        # Number of samples for the Nyström approximation (~ sqrt(n))
+        p = int(np.ceil(np.sqrt(n)))
+        matrix_size = (n, p)
+        estimated_size = (float_precision / 8) * n * p / 10**9 # GB
     else:
-        # Compute all the pairwise distances using torch/scipy functions
-        if pytorch:
-            # Convert all representations into typed np.arrays
-            node_representations = np.array([np.array(x_i, dtype=float) for x_i in node_representations], dtype=float)
-            # Convert into torch tensors
-            # node_representations = torch.from_numpy(node_representations)
-            # distances = torch.nn.functional.pdist(node_representations, p=1)
-            # Resolve arguments
-            pdist_kwargs = {}
-            if distance == 'l2':
-                pdist_kwargs['metric'] = 'euclidean'
-            elif distance == 'l1':
-                pdist_kwargs['metric'] = 'minkowski'
-                pdist_kwargs['p'] = 1
-            else:
-                pdist_kwargs['metric'] = 'hamming'
-                if 'scaling' in distance_kwargs:
-                    alphas = np.ones(len(node_representations[0]))
-                    for i in range(1, len(alphas)):
-                        alphas[i] = alphas[i - 1] / distance_kwargs['scaling']
-                    pdist_kwargs['w'] = alphas.copy()
-            distances = scipy.spatial.distance.pdist(node_representations, **pdist_kwargs)
-            #distances = scipy.spatial.distance.squareform(distances)
-        # Numba c++ vectorization
-        elif numba:
-            # Convert all representations into typed np.arrays
-            node_representations = np.array([np.array(x_i, dtype=float) for x_i in node_representations], dtype=float)
-            # Import the numba-rized method
-            computeDistanceNumba = getattr(importlib.import_module(f'distances.methods'), f'{distance}Numba')
-            # Resolve extra arguments (numba/c++ do not accept python objects as arguments...)
-            scaling = 0 if distance != 'hamming' else distance_kwargs['scaling']
-            distances = auxiliaryDistFullNumba(node_representations, computeDistanceNumba, scaling=scaling)
-        # Pythonic parallelized approach
-        elif parallel:
-            computeDistance = getattr(importlib.import_module(f'distances.methods'), distance)
-            distances = \
-                (Parallel(n_jobs=NUM_CORES)
-                         (delayed(auxiliaryDistParallel)
-                         (node_representations[i:], computeDistance, **distance_kwargs) for i in tqdm(range(n))))
-            # Flatten distances
-            distances = np.array([item for sublist in distances for item in sublist])
-            # # Convert into symmetric matrix
-            # for i in range(n):
-            #     distances[i, i:] = distances_[i]
-            # distances = np.where(distances, distances, distances.T)
-        # Fully unoptimized pythonic way
+        matrix_size = (n, n)
+        estimated_size = (float_precision / 8) * n**2 / 10**9 # GB
+    print()
+    print(f'Total number of node representations: {n:,}')
+    print(f'Estimated size of the {matrix_size} dense matrix using {dtype}: {estimated_size:,}GB')
+    # Safety check
+    assert estimated_size < MAX_DISK_STORAGE, 'Matrix size is too big! Consider augmenting MAX_STORAGE!'
+    if estimated_size >= MAX_MEMORY and output_format != 'h5':
+        raise ValueError(
+            'Not enough in-memory size for this configuration! Consider using disk storage with hd5!')
+    # Resolve the cdist parameters
+    cdist_kwargs = resolveDistanceKwargs(distance, m, distance_kwargs)
+    print()
+    print('Computing all the indicated pairwise distances...')
+    idxs = np.arange(0, n, 1, dtype=int)
+    if nystrom:
+        # Saple p random columns (without replacement)
+        np.random.shuffle(idxs)
+        idxs = np.sort(idxs)[:p]
+    # Chunked version for huge matrices
+    if output_format == 'hd5':
+        raise ValueError('Method with hd5 storage not implemented!')
+    # Full in-memory approach
+    else:
+        dist_matrix = sp.spatial.distance.cdist(
+            node_representations, node_representations[idxs, :], **cdist_kwargs).astype(dtype)
+        # Save file in memory
+        Path(save_destination).mkdir(parents=True, exist_ok=True)
+        if nystrom:
+            np.savez_compressed(
+                f'{save_destination}/nystrom{float_precision}_{int(time.time() * 1000)}.npz', 
+                dist_matrix=dist_matrix, idxs=idxs
+            )
         else:
-            computeDistance = getattr(importlib.import_module(f'distances.methods'), distance)
-            distances = auxiliaryDistFull(node_representations, computeDistance, **distance_kwargs)  
-    return distances
+            np.savez_compressed(
+                f'{save_destination}/full{float_precision}.npz', dist_matrix=dist_matrix)
+        return dist_matrix

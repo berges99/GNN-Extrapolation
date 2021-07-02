@@ -27,16 +27,20 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 def readArguments():
     '''Auxiliary function to parse the arguments passed to the script.'''
     parser = argparse.ArgumentParser()
+    ##########
+    # Input data to the "student"
     parser.add_argument(
-        '--dataset_filename', type=str, # no longer required (baseline)
+        '--dataset_filename', type=str,
         help='Full relative path to the networkx dataset.')
     parser.add_argument(
-        '--initial_relabeling', type=str, choices=['ones', 'degrees'], # no longer required (baseline)
-        help='Type of labeling to be used in the case that there aren\'t any available. Available choices are [ones, degrees].')
+        '--initial_relabeling', type=str, choices=['ones', 'degrees'],
+        help='Type of labeling to be used in the case that there aren\'t any available.')
+    ###
     parser.add_argument(
         '--teacher_outputs_filename', type=str, required=True, 
         help='Full relative path to the teacher outputs of the given dataset.')
-    ###
+    ##########
+    # Miscellaneous arguments
     parser.add_argument(
         '--verbose', '-v', type=booleanString, default=False, 
         help='Whether to print the outputs through the terminal.')
@@ -44,18 +48,24 @@ def readArguments():
         '--save_file_destination', type=booleanString, default=False,
         help='Whether to save the file path destination into a temporary file for later pipelined processing.')
     ##########
+    # Load existing model
+    parser.add_argument(
+        '--load_model', type=str,
+        help='Full relative path to the existing trained or untrained model to use at initialization.')
+    ###
+    parser.add_argument(
+        '--num_iterations', type=int, default=1,
+        help='Number of student outputs to produce with the same configuration.')
+    ##########
     # Training specific arguments
     parser.add_argument(
-        '--num_random_initializations', type=int, default=1,
-        help='Number of random initializations for the student network, i.e. number of trainings per teacher outputs.')
+        '--train', type=booleanString, default=True,
+        help='Whether to train or fine-tune the given model.')
     parser.add_argument(
-        '--epochs', type=int, default=10,
+        '--epochs', type=int, default=6,
         help='Number of epochs of training for the chosen model.')
     ##########
     # Network weight initialization specific arguments
-    # parser.add_argument(
-    #     '--init_weights', type=str, default='uniform', choices=['uniform'],
-    #     help='Weight initialization scheme for the chosen network architecture.')
     parser.add_argument(
         '--bias', type=float, action=parameterizedKeepOrderAction('init_kwargs'),
         help='Whether to include some specific bias to the linear layers of the network.')
@@ -68,7 +78,7 @@ def readArguments():
     ##########
     # Model specific arguments
     model_subparser = parser.add_subparsers(dest='model')
-    model_subparser.required = True
+    model_subparser.required = '--load_model' not in sys.argv
     ###
     Baseline = model_subparser.add_parser('Baseline', help='Baseline model specific parser.')
     Baseline.add_argument(
@@ -89,9 +99,7 @@ def readArguments():
         '--tau', type=float, required='--smoothing heat_kernel' in ' '.join(sys.argv),
         action=parameterizedKeepOrderAction('smoothing_kwargs'),
         help='Tau parameter for the heat kernel.')
-
     # TBD Implement the approximate pagerank kernel
-
     ##########
     GIN = model_subparser.add_parser('GIN', help='GIN model specific parser.')
     GIN.add_argument(
@@ -172,27 +180,67 @@ def readArguments():
     return parser.parse_args()
 
 
+def __convertStr(s):
+    '''Auxiliary function that converts a variable into it's correspondent dtype.'''
+    if s.lower() in ['true', 'false']:
+        return s.lower() == 'true'
+    elif all([c.isdigit() for c in s]):
+        return int(s)
+    elif any([c.isdigit() for c in s]) and '.' in s:
+        return float(s)
+    else:
+        return str(s)
+
+
 def resolveParameters(f, kwargs):
     '''Auxiliary function to resolve the given parameters against the function defaults.'''
     default_f_kwargs = {
         k: v.default for k, v in inspect.signature(f).parameters.items()
         if v.default is not inspect.Parameter.empty
     }
+    kwargs_ = {}
+    full_f_names = [k.split('_') for k in default_f_kwargs.keys()]
+    for k, v in kwargs.items():
+        for name in full_f_names:
+            if k == name[0] or k == '_'.join(name):
+                kwargs_['_'.join(name)] = v
     resolved_kwargs = {
-        k: kwargs[k] if k in kwargs else v for k, v in default_f_kwargs.items()
+        k: kwargs_[k] if k in kwargs_ else v for k, v in default_f_kwargs.items()
     }
     return resolved_kwargs
 
 
+def resolveExistingModelParams(args):
+    '''Auxiliary function to determine imported model params and final filename.
+       args.load_model example:
+        - ../data/synthetic/erdos_renyi/N300_n100_p0.1_1624629108/teacher_outputs/regression/GIN/hidden32_blocks3_residualFalse_jkTrue__bias0_lower-0.1_upper0.1/1624991428303/student_outputs/ChebNet/hidden32_blocks3_K2_normalizationSym__bias0_lower-0.1_upper0.1__epochs6/1624999989318/model.pt
+    '''
+    model_filename_split = args.load_model.split('/')
+    # Assert the teacher outputs and imported model are trained for the same setting
+    assert args.setting == model_filename_split[6], 'Teacher & imported student must have the same setting!'
+    if args.setting == 'classification':
+        assert args.classes == model_filename_split[7], 'Teacher & imported student must have the same setting!'
+    # Resolve model
+    args.model = args.load_model.split('/student_outputs/')[-1].split('/')[0]
+    # We do not need init_kwargs
+    args.model_kwargs = model_filename_split[-3].split('__')[0].split('_')
+    args.model_kwargs = [
+        re.sub(r"([A-Z])", r" \1", re.sub(r"(\d+)", r" \1", kwarg)).split() 
+        for kwarg in args.model_kwargs
+    ]
+    args.model_kwargs = {x[0]: __convertStr(x[1]) for x in args.model_kwargs}
+    return args
+
+
 def resolveTeacherOutputsFilenames(path):
     '''Auxiliary function that returns an iterable with all the involved teacher outputs.'''
-    if os.path.isdir(path):
+    if 'teacher_outputs.pkl' in os.listdir(path):
+        teacher_outputs_filenames = [path]
+    else:
         teacher_outputs_filenames = [
             f"{path}/{t_i}/teacher_outputs.pkl" for t_i in os.listdir(path)
-            if all(c.isdigit() for c in t_i)
+            if all(c.isdigit() for c in t_i[-13:])
         ]
-    else:
-        teacher_outputs_filenames = [path]
     return teacher_outputs_filenames
 
 
@@ -207,31 +255,29 @@ def main():
         Baseline = getattr(importlib.import_module(f'models.{args.model}'), 'Baseline')
         # Resolve smoothing keyword arguments
         smoothing_kwargs = {k: v for k, v in args.smoothing_kwargs} if 'smoothing_kwargs' in vars(args) else {}
-        # Read the specified node representations
-        node_representations, dist_matrix = readPickle(args.dist_matrix_filename)
-        # Expand the compressed distance matrix
-        dist_matrix = expandCompressedDistMatrix(dist_matrix)
-        # Compute number of nodes per graph (to handle multiple sized graphs in the future)
-        node_representations_idxs = np.array([len(G) for G in node_representations], dtype=int)
-        node_representations_flatten = np.array([item for sublist in node_representations for item in sublist])
+        # Resolve storage filename
+        student_outputs_filename_suffix = \
+            f"{('/'.join(args.dist_matrix_filename.split('/')[-7:-3]) + '/' + '/'.join(args.dist_matrix_filename.split('/')[-3:])).replace('/', '__').rstrip('.npz')}" \
+            f"__{args.method}_s{str(args.smoothing).capitalize()}"
+        if smoothing_kwargs:
+            student_outputs_filename_suffix = \
+                f"{student_outputs_filename_suffix}_{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in smoothing_kwargs.items()])}"
+        student_outputs_filename_suffix = f"{student_outputs_filename_suffix}.pkl"
+        # Read the distance matrix
+        dist_matrix = np.load(args.dist_matrix_filename)
+        idxs = dist_matrix['idxs'] if 'nystrom' in args.dist_matrix_filename.split('/')[-1] else None
+        dist_matrix = dist_matrix['dist_matrix']
         # Read the teacher outputs of the dataset (iterate through folder if necessary)
         for teacher_outputs_filename in tqdm(resolveTeacherOutputsFilenames(args.teacher_outputs_filename)):
             # Resolve storage filename
             student_outputs_filename = \
-                f"{'/'.join(teacher_outputs_filename.split('/')[:-1])}/student_outputs/{args.model}/" \
-                f"{('/'.join(args.dist_matrix_filename.split('/')[-6:-3]) + '/' + '/'.join(args.dist_matrix_filename.split('/')[-2:])).replace('/', '__').rstrip('.pkl')}" \
-                f"__{args.method}_s{str(args.smoothing).capitalize()}"
-            if smoothing_kwargs:
-                student_outputs_filename = \
-                    f"{student_outputs_filename}_{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in smoothing_kwargs.items()])}"
-            student_outputs_filename = f"{student_outputs_filename}.pkl"
+                f"{'/'.join(teacher_outputs_filename.split('/')[:-1])}/student_outputs/{args.model}/{student_outputs_filename_suffix}"
             # Read the teacher outputs
             teacher_outputs = readPickle(teacher_outputs_filename)
             teacher_outputs_flatten = np.array([item for sublist in teacher_outputs for item in sublist])
             # Predict with the baseline (predict on all the training set) -> list(range(len(node_representations)))
-            _, student_outputs = Baseline(
-                node_representations_flatten, node_representations_idxs, teacher_outputs_flatten, dist_matrix,
-                train_idxs=list(range(len(node_representations))), test_idxs=None, num_outputs=1 if args.setting == 'regression' else args.classes,
+            student_outputs = Baseline(
+                teacher_outputs_flatten, dist_matrix, idxs=idxs, num_outputs=1 if args.setting == 'regression' else args.classes,
                 method=args.method, smoothing=None, **smoothing_kwargs #smoothing=args.smoothing
             )
             if args.verbose:
@@ -243,34 +289,29 @@ def main():
             writePickle([student_outputs], filename=student_outputs_filename)
     # If the model is a GNN
     else: #elif args.model != 'Baseline':
-        # Import the model
-        Net = getattr(importlib.import_module(f'models.{args.model}'), 'Net')
-        # Resolve the model arguments
-        init_kwargs = {k: v for k, v in args.init_kwargs} if 'init_kwargs' in vars(args) else {}
-        init_kwargs = resolveParameters(initWeights, init_kwargs)
-        model_kwargs = {k: v for k, v in args.model_kwargs} if 'model_kwargs' in vars(args) else {}
-        if args.setting == 'classification' and args.classes:
-            model_kwargs['num_outputs'] = args.classes
-        model_kwargs = resolveParameters(Net.__init__, model_kwargs)
         # Read the dataset and convert it to torch_geometric.data
         networkx_dataset = readPickle(args.dataset_filename)
         torch_dataset = fromNetworkx2Torch(networkx_dataset, initial_relabeling=args.initial_relabeling)
+        # Resolve model kwargs and import the necessary module
+        if args.load_model: 
+            args = resolveExistingModelParams(args)
+        else:
+            init_kwargs = {k: v for k, v in args.init_kwargs} if 'init_kwargs' in vars(args) else {}
+            init_kwargs = resolveParameters(initWeights, init_kwargs)
+        model_kwargs = {k: v for k, v in args.model_kwargs} if 'model_kwargs' in vars(args) else {}
+        if args.setting == 'classification' and args.classes:
+            model_kwargs['num_outputs'] = args.classes
+        # Import the model
+        Net = getattr(importlib.import_module(f'models.{args.model}'), 'Net')
+        model_kwargs = resolveParameters(Net.__init__, model_kwargs)
         # Read the teacher outputs of the dataset (iterate through folder if necessary)
         for teacher_outputs_filename in tqdm(resolveTeacherOutputsFilenames(args.teacher_outputs_filename)):
-            # Resolve storage filename
-            student_outputs_filename_prefix = \
-                f"{'/'.join(teacher_outputs_filename.split('/')[:-1])}/student_outputs/{args.model}/" \
-                f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in model_kwargs.items() if k not in ['num_features', 'num_outputs']])}__" \
-                f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in init_kwargs.items()])}__epochs{args.epochs}"
-            # Read the teacher outputs
+            # Prepare torch loader and transform data if necessary
             teacher_outputs = readPickle(teacher_outputs_filename)
-            # Prepare torch loader
             torch_dataset = addLabels(torch_dataset, teacher_outputs)
-            ###
-            # X_train, X_test = splitData(torch_dataset)
-            # train_loader = DataLoader(X_train, batch_size=1)
-            # test_loader = DataLoader(X_test, batch_size=1)
-            ###
+            # Prepare torch loader and transform data if necessary
+            teacher_outputs = readPickle(teacher_outputs_filename)
+            torch_dataset = addLabels(torch_dataset, teacher_outputs)
             if args.model == 'SIGN':
                 transform = T.Compose([T.NormalizeFeatures(), T.SIGN(model_kwargs['K'])])
                 torch_dataset = [transform(G) for G in torch_dataset]
@@ -281,35 +322,104 @@ def main():
                     normalization=model_kwargs['normalization'], is_undirected=True)])
                 torch_dataset = [transform(G) for G in torch_dataset]
             torch_dataset_loader = DataLoader(torch_dataset, batch_size=1)
-            # Produce as many results with as many random initializations as indicated
-            for _ in tqdm(range(args.num_random_initializations)):
-                # Init the model
+            # Load existing model if specified
+            if args.load_model:
+                # Init the model with the existing one
                 model = Net(**model_kwargs).to(device)
-                model.apply(partial(initWeights, **init_kwargs))
+                model.load_state_dict(torch.load(args.load_model))
                 # Train during the specified amount of epochs
                 if args.setting == 'regression':
                     student_outputs = [test_regression(model, torch_dataset_loader, device)]
                     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-                    for _ in range(args.epochs):
-                        train_regression(model, optimizer, torch_dataset_loader, device)
-                        student_outputs.append(test_regression(model, torch_dataset_loader, device))
+                    if args.train:
+                        for _ in range(args.epochs):
+                            train_regression(model, optimizer, torch_dataset_loader, device)
+                            student_outputs.append(test_regression(model, torch_dataset_loader, device))
                 else: #elif args.setting == 'classification':
                     student_outputs = [test_classification(model, torch_dataset_loader, device)]
                     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-                    for _ in range(args.epochs):
-                        train_classification(model, optimizer, torch_dataset_loader, device)
-                        student_outputs.append(test_classification(model, torch_dataset_loader, device))
+                    if args.train:
+                        for _ in range(args.epochs):
+                            train_classification(model, optimizer, torch_dataset_loader, device)
+                            student_outputs.append(test_classification(model, torch_dataset_loader, device))
                 if args.verbose:
                     print()
                     print('Student outputs:')
                     print('-' * 30)
                     print(student_outputs)
-                # Save the student outputs and the trained model
-                student_outputs_filename_prefix_ = f"{student_outputs_filename_prefix}/{int(time.time() * 1000)}"
-                student_outputs_filename = f"{student_outputs_filename_prefix_}/student_outputs.pkl"
-                student_outputs_filename_model = f"{student_outputs_filename_prefix_}/model.pt"
-                writePickle(student_outputs, filename=student_outputs_filename)
-                torch.save(model.state_dict(), student_outputs_filename_model)
+        
+
+            # Otherwise proceed as per usual
+            else:
+                # Produce as many results with as many random initializations as indicated
+                for _ in tqdm(range(args.num_iterations)):
+                    # Init the model
+                    model = Net(**model_kwargs).to(device)
+                    model.apply(partial(initWeights, **init_kwargs))
+                    # Train during the specified amount of epochs
+                    if args.setting == 'regression':
+                        student_outputs = [test_regression(model, torch_dataset_loader, device)]
+                        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+                        if args.train:
+                            for _ in range(args.epochs):
+                                train_regression(model, optimizer, torch_dataset_loader, device)
+                                student_outputs.append(test_regression(model, torch_dataset_loader, device))
+                    else: #elif args.setting == 'classification':
+                        student_outputs = [test_classification(model, torch_dataset_loader, device)]
+                        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+                        if args.train:
+                            for _ in range(args.epochs):
+                                train_classification(model, optimizer, torch_dataset_loader, device)
+                                student_outputs.append(test_classification(model, torch_dataset_loader, device))
+                    if args.verbose:
+                        print()
+                        print('Student outputs:')
+                        print('-' * 30)
+                        print(student_outputs)
+
+            
+
+            
+            
+
+            
+            # Read the teacher outputs of the dataset (iterate through folder if necessary)
+            for teacher_outputs_filename in tqdm(resolveTeacherOutputsFilenames(args.teacher_outputs_filename)):
+                # Resolve storage filename
+                student_outputs_filename_prefix = \
+                    f"{'/'.join(teacher_outputs_filename.split('/')[:-1])}/student_outputs/{args.model}/" \
+                    f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in model_kwargs.items() if k not in ['num_features', 'num_outputs']])}__" \
+                    f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in init_kwargs.items()])}__epochs{args.epochs}"
+                
+                # Produce as many results with as many random initializations as indicated
+                for _ in tqdm(range(args.num_iterations)):
+                    # Init the model
+                    model = Net(**model_kwargs).to(device)
+                    model.apply(partial(initWeights, **init_kwargs))
+                    # Train during the specified amount of epochs
+                    if args.setting == 'regression':
+                        student_outputs = [test_regression(model, torch_dataset_loader, device)]
+                        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+                        for _ in range(args.epochs):
+                            train_regression(model, optimizer, torch_dataset_loader, device)
+                            student_outputs.append(test_regression(model, torch_dataset_loader, device))
+                    else: #elif args.setting == 'classification':
+                        student_outputs = [test_classification(model, torch_dataset_loader, device)]
+                        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+                        for _ in range(args.epochs):
+                            train_classification(model, optimizer, torch_dataset_loader, device)
+                            student_outputs.append(test_classification(model, torch_dataset_loader, device))
+                    if args.verbose:
+                        print()
+                        print('Student outputs:')
+                        print('-' * 30)
+                        print(student_outputs)
+                    # Save the student outputs and the trained model
+                    student_outputs_filename_prefix_ = f"{student_outputs_filename_prefix}/{int(time.time() * 1000)}"
+                    student_outputs_filename = f"{student_outputs_filename_prefix_}/student_outputs.pkl"
+                    student_outputs_filename_model = f"{student_outputs_filename_prefix_}/model.pt"
+                    writePickle(student_outputs, filename=student_outputs_filename)
+                    torch.save(model.state_dict(), student_outputs_filename_model)
     return student_outputs_filename if args.save_file_destination else ''
 
 

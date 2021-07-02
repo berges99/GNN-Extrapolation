@@ -2,13 +2,31 @@
 
 
 
+Explain general purpose of the work...
 
 
 
+## Data
 
-### Teacher Setting
+### Synthetic Data
 
----
+Explain `generate_synthetic_data.py` and the structure of the datasets.
+
+### Datasets
+
+Explain `download_data.{py,sh}` and the downloadable datasets.
+
+
+
+## Node Representations
+
+
+
+## Distances
+
+
+
+## Teacher Setting
 
 The teacher setting ...
 
@@ -30,9 +48,7 @@ Commented arguments are mostly used for internal development. After all the opti
 
 
 
-### Student Setting
-
----
+## Student Setting
 
 The student setting ...
 
@@ -43,3 +59,10 @@ python3 run_model.py --
 
 TBD
 
+
+
+---
+
+### Available Models
+
+TBD

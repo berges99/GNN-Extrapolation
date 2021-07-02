@@ -2,13 +2,11 @@ import os
 import sys
 import argparse
 import numpy as np
-import pandas as pd
-import networkx as nx
 
 from collections import OrderedDict
 
-from utils.stats import *
-from utils.io import KeepOrderAction, readPickle, writePickle, booleanString
+from utils.stats import getMaxDegree, getAvgDegree
+from utils.io import KeepOrderAction, readPickle, booleanString
 
 from distances.compute_distances import computeDistMatrix
 
@@ -28,14 +26,24 @@ def readArguments():
         '--save_file_destination', type=booleanString, default=False,
         help='Whether to save the file path destination into a temporary file for later pipelined processing.')
     ##########
+    parser.add_argument(
+        '--nystrom', type=booleanString, default=False, 
+        help='Whether to use Nystrom approximation or not.')
+    parser.add_argument(
+        '--float_precision', type=int, choices=[32, 64], default=64, 
+        help='Precision of the float numbers in the distance matrix.')
+    parser.add_argument(
+        '--output_format', type=str, choices=['npz', 'hd5'], default='npz', 
+        help='Desired format for the output file stored in memory.')
+    ##########
     # Parse all the arguments related to the distance computation
     parser.add_argument(
         '--distance', type=str, required=True, choices=['hamming', 'l1', 'l2', 'edit'], action=KeepOrderAction,
-        help='Distance to use for computing the distances between node representations. Available choices are [hamming, l1, l2].')
+        help='Distance to use for computing the distances between node representations.')
     parser.add_argument(
         '--scaling', type=str, required='--distance hamming' in ' '.join(sys.argv),
         choices=['constant', 'maxdegree', 'avgdegree'], action=KeepOrderAction,
-        help='Apply special scaling to the distance between node representations. Available choices are [maxdegree, avgdegree, constant].')
+        help='Apply special scaling to the distance between node representations.')
     parser.add_argument(
         '--relabel', type=booleanString, required='--distance edit' in ' '.join(sys.argv), action=KeepOrderAction,
         help='Whether to perform relabeling of the extracted rooted trees of the dataset, i.e. no relabel cost in edit distance.')
@@ -56,24 +64,23 @@ def main():
         k: v for k, v in args.ordered_args[distance_kwargs_idx + 1:]
     })
     distances_filename = \
-        f"{'/'.join(args.node_representations_filename.split('/')[:-1])}/dist_matrices/{args.distance}/" \
-        f"distance_{'_'.join([k[0] + str(v).capitalize() for k, v in distance_kwargs.items()])}.pkl"
-    if os.path.isfile(distances_filename):
-        node_representations_flatten, dist_matrix = readPickle(distances_filename)
-    else:
-        node_representations_flatten = [item for sublist in node_representations for item in sublist]
-        if 'scaling' in distance_kwargs:
-            if distance_kwargs['scaling'] == 'maxdegree':
-                distance_kwargs['scaling'] = getMaxDegree(networkx_dataset)
-            elif distance_kwargs['scaling'] == 'avgdegree':
-                distance_kwargs['scaling'] = getAvgDegree(networkx_dataset)
-            else:
-                distance_kwargs['scaling'] = 1
-        dist_matrix = computeDistMatrix(
-            node_representations_flatten, args.distance, nystrom=False, 
-            pytorch=True, numba=False, parallel=False, **distance_kwargs
-        )
-        writePickle((node_representations, dist_matrix), filename=distances_filename)
+        f"{'/'.join(args.node_representations_filename.split('/')[:-1])}/dist_matrices/{args.distance}"
+    if distance_kwargs:
+        distances_filename = \
+            f"{distances_filename}/{'_'.join([k[0] + str(v).capitalize() for k, v in distance_kwargs.items()])}"
+    node_representations_flatten = [item for sublist in node_representations for item in sublist]
+    # Determine scaling (dataset dependent)
+    if 'scaling' in distance_kwargs:
+        if distance_kwargs['scaling'] == 'maxdegree':
+            distance_kwargs['scaling'] = getMaxDegree(networkx_dataset)
+        elif distance_kwargs['scaling'] == 'avgdegree':
+            distance_kwargs['scaling'] = getAvgDegree(networkx_dataset)
+        else:
+            distance_kwargs['scaling'] = 1
+    dist_matrix = computeDistMatrix(
+        node_representations_flatten, distance=args.distance, save_destination=distances_filename,
+        nystrom=args.nystrom, float_precision=args.float_precision, output_format=args.output_format, **distance_kwargs
+    )
     if args.verbose:
         print()
         print(f'Distance matrix: (shape = [{dist_matrix.shape}])')

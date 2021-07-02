@@ -1,13 +1,21 @@
 import numpy as np
+import scipy as sp
 
 from numba import jit
 
 
 
-# TBD Adapt for huge matrices -> HDF5 form with pytables
-def computeD(W):
+def computeD(W, output_format='sparse'):
     '''Auxiliary function to compute the diagonal matrix for a given adjacency matrix (weighted).'''
-    return np.diag([np.sum(W[i, :]) for i in range(len(W))])
+    n = len(W)
+    #diag = [np.sum(W[i, :]) for i in range(len(W))]
+    diag = (W @ np.ones((n, 1))).reshape(-1)
+    if output_format == 'sparse':
+        return sp.sparse.diags(diag, offsets=0, shape=(n, n), format='csr')
+    elif output_format == 'dense': 
+        return np.diag(diag)
+    else:
+        raise ValueError('Ouput format must be either "dense" or "sparse".')
     
 
 # TBD Adapt for huge matrices -> HDF5 form with pytables
