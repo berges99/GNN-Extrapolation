@@ -15,7 +15,7 @@ from torch import nn
 from torch_geometric.data import DataLoader
 
 from utils.convert import fromNetworkx2Torch
-from utils.training import initWeights, test_regression, test_classification
+from utils.training import test_regression, test_classification
 from utils.io import readPickle, writePickle, parameterizedKeepOrderAction, booleanString
 
 
@@ -62,14 +62,22 @@ def readArguments():
     ##########
     # Network weight initialization specific arguments
     parser.add_argument(
+        '--init', type=str, default='uniform', choices=['uniform', 'xavier'],
+        help='Type of initialization for the network.')
+    parser.add_argument(
         '--bias', type=float, action=parameterizedKeepOrderAction('init_kwargs'),
         help='Whether to include some specific bias to the linear layers of the network.')
+    ###
     parser.add_argument(
         '--lower_bound', type=float, action=parameterizedKeepOrderAction('init_kwargs'),
         help='Lower bound of the uniform random initialization.')
     parser.add_argument(
         '--upper_bound', type=float, action=parameterizedKeepOrderAction('init_kwargs'),
         help='Upper bound of the uniform random initialization.')
+    ###
+    parser.add_argument(
+        '--gain', type=float, action=parameterizedKeepOrderAction('init_kwargs'),
+        help='Optional scaling factor for the Xavier initialization.')
     ##########
     # Model specific arguments
     model_subparser = parser.add_subparsers(dest='model')
@@ -91,6 +99,9 @@ def readArguments():
     GIN.add_argument(
         '--jk', type=booleanString, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Whether to add jumping knowledge in the network.')
+    GIN.add_argument(
+        '--mlp', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Number of linear layers for the final projection.')
     # For the moment we only support teachers with GIN architecture
     return parser.parse_args()
 
@@ -146,7 +157,7 @@ def resolveExistingModelParams(args):
     teacher_outputs_filename_prefix = model_filename_split[:-2]
     teacher_outputs_filename_prefix[4] = args.dataset_filename.split('/')[4]
     teacher_outputs_filename_prefix = \
-        f"{'/'.join(teacher_outputs_filename_prefix)}/{model_filename_split[4]}_{model_filename_split[-2]}"
+        f"{'/'.join(teacher_outputs_filename_prefix)}/{model_filename_split[4]}__{model_filename_split[-2]}"
     return args, teacher_outputs_filename_prefix
 
 
@@ -180,8 +191,9 @@ def main():
         writePickle(teacher_outputs, filename=teacher_outputs_filename)
     # Otherwise proceed as per usual
     else:
-        # Import the model
+        # Import the model and init function
         Net = getattr(importlib.import_module(f'models.{args.model}'), 'Net')
+        initWeights = getattr(importlib.import_module('utils.training'), f'initWeights{args.init.capitalize()}')
         # Resolve initialization parameters
         init_kwargs = {k: v for k, v in args.init_kwargs} if 'init_kwargs' in vars(args) else {}
         init_kwargs = resolveParameters(initWeights, init_kwargs)
@@ -197,7 +209,7 @@ def main():
         teacher_outputs_filename_prefix = \
             f"{teacher_outputs_filename_prefix}/{args.model}/" \
             f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in model_kwargs.items() if k not in ['num_features', 'num_outputs']])}__" \
-            f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in init_kwargs.items()])}"
+            f"init{args.init.capitalize()}_{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in init_kwargs.items()])}"
         for _ in tqdm(range(args.num_iterations)):
             teacher_outputs_filename_prefix_ = f"{teacher_outputs_filename_prefix}/{int(time.time() * 1000)}"
             teacher_outputs_filename = f"{teacher_outputs_filename_prefix_}/teacher_outputs.pkl"

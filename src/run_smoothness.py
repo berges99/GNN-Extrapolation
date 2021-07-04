@@ -34,50 +34,49 @@ def readArguments():
         '--teacher_outputs_filename', type=str, required=True, 
         help='Full relative path to the teacher outputs of the given dataset (or parent directory path).')
     parser.add_argument(
-        '--verbose', '-v', type=booleanString, default=False, 
+        '--verbose', type=booleanString, default=False, 
         help='Whether to print the outputs through the terminal.')
     return parser.parse_args()
 
 
 def resolveTeacherOutputsFilenames(path):
     '''Auxiliary function that returns an iterable with all the involved teacher outputs.'''
-    if os.path.isdir(path):
+    if 'teacher_outputs.pkl' in os.listdir(path):
+        teacher_outputs_filenames = [path]
+    else:
         teacher_outputs_filenames = [
             f"{path}/{t_i}/teacher_outputs.pkl" for t_i in os.listdir(path)
-            if all(c.isdigit() for c in t_i)
+            if all(c.isdigit() for c in t_i[-13:])
         ]
-    else:
-        teacher_outputs_filenames = [path]
     return teacher_outputs_filenames
 
 
 def main():
     args = readArguments()
-    # Read the dist matrix and node representations for the specified data
-    node_representations, dist_matrix = readPickle(args.dist_matrix_filename)
-    # Expand the compressed distance matrix
-    dist_matrix = expandCompressedDistMatrix(dist_matrix)
+    
 
-
-    # print(np.unique(dist_matrix, return_counts=True))
-    # deciles = np.percentile(dist_matrix, np.arange(0, 101, 1))
-    # print(deciles)
-    # return
-
-
-    # Compute the graph laplacian
+    # # Read the dist matrix and node representations for the specified data
+    # node_representations, dist_matrix = readPickle(args.dist_matrix_filename)
+    # # Expand the compressed distance matrix
+    # dist_matrix = expandCompressedDistMatrix(dist_matrix)
+    # Read the distance matrix
+    dist_matrix = np.load(args.dist_matrix_filename)
+    idxs = dist_matrix['idxs'] if 'nystrom' in args.dist_matrix_filename.split('/')[-1] else None
+    dist_matrix = dist_matrix['dist_matrix']
+    # Compute the induced graph adjacency matrix
     print()
-    print('-' * 30)
     print('Computing W...')
-    W = computeWNumba(dist_matrix)
-    print()
     print('-' * 30)
+    W = computeW(dist_matrix, threshold=True, normalization=True)
+    # Compute the diagonal matrix and the graph combinatorial Laplacian
+    print()
     print('Computing combinatorial Laplacian...')
-    L = computeLaplacian(W, normalize=False)
+    print('-' * 30)
+    D, L = computeL(W, idxs=idxs, normalize=False)
     # Read the teacher outputs of the dataset (iterate through folder if necessary)
     print()
-    print('-' * 30)
     print('Iterating through different teacher outputs...')
+    print('-' * 30)
     for teacher_outputs_filename in tqdm(resolveTeacherOutputsFilenames(args.teacher_outputs_filename)):
         # Read the teacher outputs
         teacher_outputs = readPickle(teacher_outputs_filename)
@@ -107,7 +106,7 @@ def main():
                         student_smoothness[model][model_config][0]['rmse'].append(rmse)
                         # Compute the smoothness of such predictions
                         student_output = np.array(student_output)[:, None]
-                        smoothness = computeSmoothness(L, F=student_output)
+                        smoothness = computeSmoothness(D, L, f=student_output)
                         student_smoothness[model][model_config][0]['smoothness'].append(smoothness)
                         student_smoothness[model][model_config][0] = {
                             'mean_smoothness': student_smoothness[model][model_config][0]['smoothness'][0],
@@ -125,15 +124,15 @@ def main():
                 else:
                     # Get all student parameterizations
                     student_parameterizations = [
-                        p for p in os.listdir(student_outputs_filename_prefix) if 'epochs' in p
+                        p for p in os.listdir(student_outputs_filename_prefix) if 'init' in p
                     ]
                     for student_parameterization in student_parameterizations:
-                        model_config = student_parameterization.split('__epochs')[0]
+                        model_config = student_parameterization #.split('__epochs')[0]
                         # Get all available student outputs for the given parameterization
                         student_outputs_filenames = [
                             f"{student_outputs_filename_prefix}/{student_parameterization}/{ts}/student_outputs.pkl"
                             for ts in os.listdir(f"{student_outputs_filename_prefix}/{student_parameterization}")
-                            if all(c.isdigit() for c in ts)
+                            if all(c.isdigit() for c in ts[-13:])
                         ]
                         for student_outputs_filename in student_outputs_filenames:
                             student_outputs = readPickle(student_outputs_filename)
@@ -146,7 +145,7 @@ def main():
                                 student_smoothness[model][model_config][epoch]['rmse'].append(rmse)
                                 # Compute the smoothness of such predictions
                                 student_output = np.array(student_output)[:, None]
-                                smoothness = computeSmoothness(L, F=student_output)
+                                smoothness = computeSmoothness(D, L, f=student_output)
                                 student_smoothness[model][model_config][epoch]['smoothness'].append(smoothness)
                         # Compute mean and std deviation for all initializations (per epoch approach)
                         for epoch, stats in student_smoothness[model][model_config].items():
@@ -178,8 +177,9 @@ def main():
         # Store file
         student_smoothness_filename = \
             f"{'/'.join(teacher_outputs_filename.split('/')[:-1])}/smoothness/" \
-            f"{('/'.join(args.dist_matrix_filename.split('/')[-6:-3]) + '/' + '/'.join(args.dist_matrix_filename.split('/')[-2:])).replace('/', '__').rstrip('.pkl')}.csv"
+            f"{('/'.join(args.dist_matrix_filename.split('/')[-7:-4]) + '/' + '/'.join(args.dist_matrix_filename.split('/')[-3:])).replace('/', '__').rstrip('.npz')}.csv"
         student_smoothness_filepath = '/'.join(student_smoothness_filename.split('/')[:-1])
+        print(student_smoothness_filename)
         Path(student_smoothness_filepath).mkdir(parents=True, exist_ok=True)
         student_smoothness.to_csv(student_smoothness_filename)
                 

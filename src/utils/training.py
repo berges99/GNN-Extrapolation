@@ -4,10 +4,22 @@ from torch import nn
 
 
 
-def initWeights(m, bias=0, lower_bound=-0.1, upper_bound=0.1):
+##################
+# INIT FUNCTIONS #
+##################
+
+
+def initWeightsUniform(m, bias=0.0, lower_bound=-0.1, upper_bound=0.1):
     '''Auxiliary function that applies a uniform distribution to the weights and a bias=0.'''
     if type(m) == nn.Linear:
         m.weight.data.uniform_(lower_bound, upper_bound)
+        m.bias.data.fill_(bias)
+
+
+def initWeightsXavier(m, bias=0.0, gain=1.0):
+    '''Auxiliary funtion that applies a xavier uniform distribution to the weights and a bias=0.'''
+    if type(m) == nn.Linear:
+        nn.init.xavier_uniform_(m.weight, gain=gain)
         m.bias.data.fill_(bias)
 
 

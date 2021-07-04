@@ -17,7 +17,7 @@ class Net(nn.Module):
 
     The SGC reduces the entire procedure to a simple feature propagation step.
     '''
-    def __init__(self, num_features=1, num_outputs=1, hidden_dim=32, K=3):
+    def __init__(self, num_features=1, num_outputs=1, K=3):
         super(Net, self).__init__()
         self.SGC_block = SGConv(num_features, num_outputs, K=K)
 

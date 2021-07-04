@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import time
 import torch
@@ -15,9 +16,9 @@ from torch import nn
 import torch_geometric.transforms as T
 from torch_geometric.data import DataLoader
 
-from utils.training import *
 from utils.convert import fromNetworkx2Torch, addLabels, expandCompressedDistMatrix
 from utils.io import readPickle, writePickle, parameterizedKeepOrderAction, booleanString
+from utils.training import train_regression, train_classification, test_regression, test_classification
 
 
 
@@ -54,7 +55,7 @@ def readArguments():
         help='Full relative path to the existing trained or untrained model to use at initialization.')
     ###
     parser.add_argument(
-        '--num_iterations', type=int, default=1,
+        '--num_iterations', type=int, default=10,
         help='Number of student outputs to produce with the same configuration.')
     ##########
     # Training specific arguments
@@ -67,14 +68,22 @@ def readArguments():
     ##########
     # Network weight initialization specific arguments
     parser.add_argument(
+        '--init', type=str, default='uniform', choices=['uniform', 'xavier'],
+        help='Type of initialization for the network.')
+    parser.add_argument(
         '--bias', type=float, action=parameterizedKeepOrderAction('init_kwargs'),
         help='Whether to include some specific bias to the linear layers of the network.')
+    ###
     parser.add_argument(
         '--lower_bound', type=float, action=parameterizedKeepOrderAction('init_kwargs'),
         help='Lower bound of the uniform random initialization.')
     parser.add_argument(
         '--upper_bound', type=float, action=parameterizedKeepOrderAction('init_kwargs'),
         help='Upper bound of the uniform random initialization.')
+    ###
+    parser.add_argument(
+        '--gain', type=float, action=parameterizedKeepOrderAction('init_kwargs'),
+        help='Optional scaling factor for the Xavier initialization.')
     ##########
     # Model specific arguments
     model_subparser = parser.add_subparsers(dest='model')
@@ -117,6 +126,9 @@ def readArguments():
     GIN.add_argument(
         '--jk', type=booleanString, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Whether to add jumping knowledge in the network.')
+    GIN.add_argument(
+        '--mlp', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Number of linear layers for the final projection.')
     ###
     GCN = model_subparser.add_parser('GCN', help='GCN model specific parser.')
     GCN.add_argument(
@@ -134,6 +146,9 @@ def readArguments():
     GCN.add_argument(
         '--jk', type=booleanString, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Whether to add jumping knowledge in the network.')
+    GCN.add_argument(
+        '--mlp', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Number of linear layers for the final projection.')
     ###
     SIGN = model_subparser.add_parser('SIGN', help='SIGN model specific parser.')
     SIGN.add_argument(
@@ -295,10 +310,13 @@ def main():
         # Resolve model kwargs and import the necessary module
         if args.load_model: 
             args = resolveExistingModelParams(args)
+            model_kwargs = args.model_kwargs
         else:
+            # Resolve initialization options
+            initWeights = getattr(importlib.import_module('utils.training'), f'initWeights{args.init.capitalize()}')
             init_kwargs = {k: v for k, v in args.init_kwargs} if 'init_kwargs' in vars(args) else {}
             init_kwargs = resolveParameters(initWeights, init_kwargs)
-        model_kwargs = {k: v for k, v in args.model_kwargs} if 'model_kwargs' in vars(args) else {}
+            model_kwargs = {k: v for k, v in args.model_kwargs} if 'model_kwargs' in vars(args) else {}
         if args.setting == 'classification' and args.classes:
             model_kwargs['num_outputs'] = args.classes
         # Import the model
@@ -324,20 +342,25 @@ def main():
             torch_dataset_loader = DataLoader(torch_dataset, batch_size=1)
             # Load existing model if specified
             if args.load_model:
+                # Resolve storage filename
+                student_outputs_filename_prefix = \
+                    f"{'/'.join(teacher_outputs_filename.split('/')[:-1])}/student_outputs/{args.model}/" \
+                    f"{args.load_model.split('/')[-3]}/{args.load_model.split('/')[4]}__" \
+                    f"{'__'.join(args.load_model.split('/student_outputs/')[0].split('/')[-3:])}__{args.load_model.split('/')[-2]}"
                 # Init the model with the existing one
                 model = Net(**model_kwargs).to(device)
                 model.load_state_dict(torch.load(args.load_model))
                 # Train during the specified amount of epochs
                 if args.setting == 'regression':
                     student_outputs = [test_regression(model, torch_dataset_loader, device)]
-                    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+                    optimizer = torch.optim.Adam(model.parameters(), lr=0.0002)
                     if args.train:
                         for _ in range(args.epochs):
                             train_regression(model, optimizer, torch_dataset_loader, device)
                             student_outputs.append(test_regression(model, torch_dataset_loader, device))
                 else: #elif args.setting == 'classification':
                     student_outputs = [test_classification(model, torch_dataset_loader, device)]
-                    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+                    optimizer = torch.optim.Adam(model.parameters(), lr=0.0002)
                     if args.train:
                         for _ in range(args.epochs):
                             train_classification(model, optimizer, torch_dataset_loader, device)
@@ -347,10 +370,18 @@ def main():
                     print('Student outputs:')
                     print('-' * 30)
                     print(student_outputs)
-        
-
+                student_outputs_filename = f"{student_outputs_filename_prefix}/student_outputs.pkl"
+                student_outputs_filename_model = f"{student_outputs_filename_prefix}/model.pt"
+                print(student_outputs_filename)
+                #writePickle(student_outputs, filename=student_outputs_filename)
+                #torch.save(model.state_dict(), student_outputs_filename_model)
             # Otherwise proceed as per usual
             else:
+                # Resolve storage filename
+                student_outputs_filename_prefix = \
+                    f"{'/'.join(teacher_outputs_filename.split('/')[:-1])}/student_outputs/{args.model}/" \
+                    f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in model_kwargs.items() if k not in ['num_features', 'num_outputs']])}__" \
+                    f"init{args.init.capitalize()}_{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in init_kwargs.items()])}"
                 # Produce as many results with as many random initializations as indicated
                 for _ in tqdm(range(args.num_iterations)):
                     # Init the model
@@ -359,56 +390,18 @@ def main():
                     # Train during the specified amount of epochs
                     if args.setting == 'regression':
                         student_outputs = [test_regression(model, torch_dataset_loader, device)]
-                        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+                        optimizer = torch.optim.Adam(model.parameters(), lr=0.0002)
                         if args.train:
                             for _ in range(args.epochs):
                                 train_regression(model, optimizer, torch_dataset_loader, device)
                                 student_outputs.append(test_regression(model, torch_dataset_loader, device))
                     else: #elif args.setting == 'classification':
                         student_outputs = [test_classification(model, torch_dataset_loader, device)]
-                        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+                        optimizer = torch.optim.Adam(model.parameters(), lr=0.0002)
                         if args.train:
                             for _ in range(args.epochs):
                                 train_classification(model, optimizer, torch_dataset_loader, device)
                                 student_outputs.append(test_classification(model, torch_dataset_loader, device))
-                    if args.verbose:
-                        print()
-                        print('Student outputs:')
-                        print('-' * 30)
-                        print(student_outputs)
-
-            
-
-            
-            
-
-            
-            # Read the teacher outputs of the dataset (iterate through folder if necessary)
-            for teacher_outputs_filename in tqdm(resolveTeacherOutputsFilenames(args.teacher_outputs_filename)):
-                # Resolve storage filename
-                student_outputs_filename_prefix = \
-                    f"{'/'.join(teacher_outputs_filename.split('/')[:-1])}/student_outputs/{args.model}/" \
-                    f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in model_kwargs.items() if k not in ['num_features', 'num_outputs']])}__" \
-                    f"{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in init_kwargs.items()])}__epochs{args.epochs}"
-                
-                # Produce as many results with as many random initializations as indicated
-                for _ in tqdm(range(args.num_iterations)):
-                    # Init the model
-                    model = Net(**model_kwargs).to(device)
-                    model.apply(partial(initWeights, **init_kwargs))
-                    # Train during the specified amount of epochs
-                    if args.setting == 'regression':
-                        student_outputs = [test_regression(model, torch_dataset_loader, device)]
-                        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-                        for _ in range(args.epochs):
-                            train_regression(model, optimizer, torch_dataset_loader, device)
-                            student_outputs.append(test_regression(model, torch_dataset_loader, device))
-                    else: #elif args.setting == 'classification':
-                        student_outputs = [test_classification(model, torch_dataset_loader, device)]
-                        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-                        for _ in range(args.epochs):
-                            train_classification(model, optimizer, torch_dataset_loader, device)
-                            student_outputs.append(test_classification(model, torch_dataset_loader, device))
                     if args.verbose:
                         print()
                         print('Student outputs:')
@@ -420,7 +413,8 @@ def main():
                     student_outputs_filename_model = f"{student_outputs_filename_prefix_}/model.pt"
                     writePickle(student_outputs, filename=student_outputs_filename)
                     torch.save(model.state_dict(), student_outputs_filename_model)
-    return student_outputs_filename if args.save_file_destination else ''
+    ###               
+    return args.teacher_outputs_filename if args.save_file_destination else ''
 
 
 if __name__ == '__main__':
