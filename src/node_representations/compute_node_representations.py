@@ -34,8 +34,8 @@ def computeDatasetNodeRepresentations(formatted_dataset,
                        (Same shape as input).
     '''
     print()
-    print('-' * 30)
     print('Computing rooted trees for all nodes in the dataset...')
+    print('-' * 30)
     # Import the adequate modules for computing the node representations
     computeNodeRepresentations = getattr(importlib.import_module(
         f"node_representations.{embedding_scheme}.{method}"), 'computeNodeRepresentations')

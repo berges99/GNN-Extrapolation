@@ -139,9 +139,6 @@ def readArguments():
     GCN.add_argument(
         '--jk', type=booleanString, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Whether to add jumping knowledge in the network.')
-    GCN.add_argument(
-        '--mlp', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
-        help='Number of linear layers for the final projection.')
     ###
     SIGN = model_subparser.add_parser('SIGN', help='SIGN model specific parser.')
     SIGN.add_argument(
