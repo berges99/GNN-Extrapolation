@@ -16,11 +16,12 @@ def __fromNystrom2Full(C, idxs):
 @jit(nopython=True, parallel=True)
 def fullBaseline(dist_matrix, teacher_outputs_flatten, method='knn'):
     '''Auxiliary function that computes the base/knn baseline using the predictions of the closest node representations.'''
-    n = len(teacher_outputs_flatten)
-    student_outputs = np.zeros(n)
+    n, m = dist_matrix.shape
+    student_outputs = np.zeros(m)
     # Set diagonal to infinity, such that we cannot use the real outputs of the values we want to predict
-    np.fill_diagonal(dist_matrix, np.inf)
-    for i in range(n):
+    if n == m:
+        np.fill_diagonal(dist_matrix, np.inf)
+    for i in range(m):
         min_dist = np.min(dist_matrix[:, i])
         # Check if we want exact or fuzzy matching
         if method == 'knn' or min_dist == 0:

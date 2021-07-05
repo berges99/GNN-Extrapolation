@@ -20,7 +20,7 @@ def readArguments():
         '--node_representations_filename', type=str, required=True,
         help='Full relative path to the node representations.')
     parser.add_argument(
-        '--verbose', '-v', type=booleanString, default=False, 
+        '--verbose', type=booleanString, default=False, 
         help='Whether to print the outputs through the terminal.')
     parser.add_argument(
         '--save_file_destination', type=booleanString, default=False,
@@ -52,12 +52,7 @@ def readArguments():
 
 def main():
     args = readArguments()
-    # Read actual dataset (for getting basic stats like max_degree, avg_degree, ...)
-    networkx_dataset = readPickle(f"{'/'.join(args.node_representations_filename.split('/')[:-5])}/raw_networkx.pkl")
-    ##########
-    # Read the node representations
-    node_representations = readPickle(args.node_representations_filename)
-    # Compute the pairwise distance matrix if necessary
+    # Resolve arguments
     ordered_args = np.array([x[0] for x in args.ordered_args])
     distance_kwargs_idx = np.where(ordered_args == 'distance')[0][0]
     distance_kwargs = OrderedDict({
@@ -68,24 +63,55 @@ def main():
     if distance_kwargs:
         distances_filename = \
             f"{distances_filename}/{'_'.join([k[0] + str(v).capitalize() for k, v in distance_kwargs.items()])}"
-    node_representations_flatten = [item for sublist in node_representations for item in sublist]
-    # Determine scaling (dataset dependent)
     if 'scaling' in distance_kwargs:
+        # Read actual dataset (for getting basic stats like max_degree, avg_degree, ...)
+        networkx_dataset = readPickle(
+            f"{'/'.join(args.node_representations_filename.split('/')[:-5])}/raw_networkx.pkl")['train']
         if distance_kwargs['scaling'] == 'maxdegree':
             distance_kwargs['scaling'] = getMaxDegree(networkx_dataset)
         elif distance_kwargs['scaling'] == 'avgdegree':
             distance_kwargs['scaling'] = getAvgDegree(networkx_dataset)
         else:
             distance_kwargs['scaling'] = 1
+    ##########
+    # Read the node representations and flatten (train, test, extrapolation)
+    node_representations = readPickle(args.node_representations_filename)
+    node_representations_train_flatten = [item for sublist in node_representations['train'] for item in sublist]
     dist_matrix = computeDistMatrix(
-        node_representations_flatten, distance=args.distance, save_destination=distances_filename,
-        nystrom=args.nystrom, float_precision=args.float_precision, output_format=args.output_format, **distance_kwargs
+        node_representations_train_flatten, distance=args.distance, save_destination=f'{distances_filename}/train', 
+        test_idx=None, nystrom=args.nystrom, float_precision=args.float_precision, 
+        output_format=args.output_format, **distance_kwargs
     )
     if args.verbose:
         print()
         print(f'Distance matrix: (shape = [{dist_matrix.shape}])')
         print('-' * 30)
         print(dist_matrix)
+    # Compute the distance of test and extrapolation with themselves and w.r.t. the train data for the baseline
+    for k in ['test', 'extrapolation']:
+        node_representations_flatten = [item for sublist in node_representations[k] for item in sublist]
+        dist_matrix = computeDistMatrix(
+            node_representations_flatten, distance=args.distance, save_destination=f'{distances_filename}/{k}', 
+            test_idx=None, nystrom=args.nystrom, float_precision=args.float_precision, 
+            output_format=args.output_format, **distance_kwargs
+        )
+        if args.verbose:
+            print()
+            print(f'Distance matrix: (shape = [{dist_matrix.shape}])')
+            print('-' * 30)
+            print(dist_matrix)
+        node_representations_flatten = node_representations_train_flatten + node_representations_flatten
+        dist_matrix = computeDistMatrix(
+            node_representations_flatten, distance=args.distance, save_destination=f'{distances_filename}/{k}', 
+            test_idx=len(node_representations_train_flatten), nystrom=args.nystrom, float_precision=args.float_precision, 
+            output_format=args.output_format, **distance_kwargs
+        )
+        if args.verbose:
+            print()
+            print(f'Distance matrix: (shape = [{dist_matrix.shape}])')
+            print('-' * 30)
+            print(dist_matrix)
+    ###
     return distances_filename if args.save_file_destination else ''
 
 

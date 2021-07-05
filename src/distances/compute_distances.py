@@ -30,9 +30,11 @@ def resolveDistanceKwargs(distance, m, distance_kwargs):
     return cdist_kwargs
 
 
+# TBD Adapt test matrices to Nystrom scenario
 def computeDistMatrix(node_representations,
                       distance,
                       save_destination,
+                      test_idx=None,
                       nystrom=False,
                       float_precision=64,
                       output_format='npz',
@@ -45,6 +47,7 @@ def computeDistMatrix(node_representations,
                                              for the desired distance (flattened array).
         - distance: (str) Name of the distance to be used.
         - save_destination: (str) Path to where the resulting distance matrix is going to be stored.
+        - test_idx: (int) Index denoting partition between train and test data.
         - nystrom: (bool) Whether to use the nyström approximation for computing the kernel.
         - output_format: (str)
         - float_precision: (int)
@@ -62,7 +65,10 @@ def computeDistMatrix(node_representations,
     # num total representations & dimension of the representations
     n, m = node_representations.shape
     # If Nyström is specified
-    if nystrom:
+    if test_idx:
+        matrix_size = (test_idx, n - test_idx)
+        estimated_size = (float_precision / 8) * n * (n - test_idx) / 10**9 # GB
+    elif nystrom:
         # Number of samples for the Nyström approximation (~ sqrt(n))
         p = int(np.ceil(np.sqrt(n)))
         matrix_size = (n, p)
@@ -82,26 +88,36 @@ def computeDistMatrix(node_representations,
     cdist_kwargs = resolveDistanceKwargs(distance, m, distance_kwargs)
     print()
     print('Computing all the indicated pairwise distances...')
-    idxs = np.arange(0, n, 1, dtype=int)
-    if nystrom:
+    if test_idx:
+        dist_matrix = sp.spatial.distance.cdist(
+            node_representations[:test_idx, :], node_representations[test_idx:, :], **cdist_kwargs).astype(dtype)
+    elif nystrom:
         # Saple p random columns (without replacement)
+        idxs = np.arange(0, n, 1, dtype=int)
         np.random.shuffle(idxs)
         idxs = np.sort(idxs)[:p]
+        dist_matrix = sp.spatial.distance.cdist(
+            node_representations, node_representations[idxs, :], **cdist_kwargs).astype(dtype)
+    else:
+        dist_matrix = sp.spatial.distance.cdist(
+            node_representations, node_representations, **cdist_kwargs).astype(dtype)
     # Chunked version for huge matrices
     if output_format == 'hd5':
         raise ValueError('Method with hd5 storage not implemented!')
     # Full in-memory approach
     else:
-        dist_matrix = sp.spatial.distance.cdist(
-            node_representations, node_representations[idxs, :], **cdist_kwargs).astype(dtype)
         # Save file in memory
         Path(save_destination).mkdir(parents=True, exist_ok=True)
         if nystrom:
-            np.savez_compressed(
-                f'{save_destination}/nystrom{float_precision}_{int(time.time() * 1000)}.npz', 
-                dist_matrix=dist_matrix, idxs=idxs
-            )
+            if test_idx:
+                save_destination = f'{save_destination}/nystrom{float_precision}_{int(time.time() * 1000)}_test.npz'
+            else:
+                save_destination = f'{save_destination}/nystrom{float_precision}_{int(time.time() * 1000)}.npz'
+            np.savez_compressed(save_destination, dist_matrix=dist_matrix, idxs=idxs)
         else:
-            np.savez_compressed(
-                f'{save_destination}/full{float_precision}.npz', dist_matrix=dist_matrix)
+            if test_idx:
+                save_destination = f'{save_destination}/full{float_precision}_test.npz'
+            else:
+                save_destination = f'{save_destination}/full{float_precision}.npz'
+            np.savez_compressed(save_destination, dist_matrix=dist_matrix)
         return dist_matrix

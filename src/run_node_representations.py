@@ -7,9 +7,8 @@ import networkx as nx
 
 from collections import OrderedDict
 
+from utils.io import readPickle, writePickle, KeepOrderAction, booleanString
 from utils.convert import getAdjacencyList, fromNetworkx2Torch, fromNetworkx2GraphML
-from utils.io import readPickle, writePickle, getLatestVersion, KeepOrderAction, booleanString
-
 from node_representations.compute_node_representations import computeDatasetNodeRepresentations
 
 
@@ -20,9 +19,10 @@ def readArguments():
     ##########
     # Parse all the input dataset related arguments
     parser.add_argument(
-        '--data_path', '-f', type=str, default='', help='Complete relative path of the dataset to be used.')
+        '--dataset_filename', type=str, default='', 
+        help='Complete relative path of the dataset to be used.')
     parser.add_argument(
-        '--verbose', '-v', type=booleanString, default=False, 
+        '--verbose', type=booleanString, default=False, 
         help='Whether to print the outputs through the terminal.')
     parser.add_argument(
         '--save_file_destination', type=booleanString, default=False,
@@ -59,15 +59,19 @@ def readArguments():
 
 def main():
     args = readArguments()
-    networkx_dataset = readPickle(args.data_path)
+    networkx_dataset = readPickle(args.dataset_filename)
+    # Flatten train + test + extrapolation data for computing the representations in one go
+    networkx_dataset_flatten_idxs = [len(networkx_dataset[k]) for k in ['train', 'test', 'extrapolation']]
+    networkx_dataset_flatten = [networkx_dataset[k] for k in ['train', 'test', 'extrapolation']]
+    networkx_dataset_flatten = [G for k in networkx_dataset_flatten for G in k]
     # Fromat the data in a convenient way
     if args.embedding_scheme == 'WL':
         if args.method == 'continuous':
-            formatted_dataset = fromNetworkx2Torch(networkx_dataset, initial_relabeling=args.initial_relabeling)
+            formatted_dataset = fromNetworkx2Torch(networkx_dataset_flatten, initial_relabeling=args.initial_relabeling)
         else: # elif args.method == 'hashing'
-            formatted_dataset = fromNetworkx2GraphML(networkx_dataset)
+            formatted_dataset = fromNetworkx2GraphML(networkx_dataset_flatten)
     else: # elif args.embedding_scheme == 'Trees'
-        formatted_dataset = [getAdjacencyList(G) for G in networkx_dataset]
+        formatted_dataset = [getAdjacencyList(G) for G in networkx_dataset_flatten]
     ##########
     # Compute all the node representations for every node in the dataset # (if necessary)
     ordered_args = np.array([x[0] for x in args.ordered_args])
@@ -76,16 +80,20 @@ def main():
         k: v for k, v in args.ordered_args[node_representations_kwargs_idx + 1:]
     })
     node_representations_filename = \
-        f"{'/'.join(args.data_path.split('/')[:-1])}/node_representations/{args.embedding_scheme}/{args.method}/" \
+        f"{'/'.join(args.dataset_filename.split('/')[:-1])}/node_representations/{args.embedding_scheme}/{args.method}/" \
         f"{'_'.join([k[0] + str(v).capitalize() for k, v in node_representations_kwargs.items()])}/node_representations.pkl"
-    if os.path.isfile(node_representations_filename):
-        node_representations = readPickle(node_representations_filename)
-    else:
-        node_representations = computeDatasetNodeRepresentations(
-            formatted_dataset, args.embedding_scheme, args.method, 
-            parallel=False, **node_representations_kwargs
-        )
-        writePickle(node_representations, filename=node_representations_filename)
+    node_representations = computeDatasetNodeRepresentations(
+        formatted_dataset, args.embedding_scheme, args.method, 
+        parallel=False, **node_representations_kwargs
+    )
+    # Reposition representations in {'train': [], 'test': [], 'extrapolation': []}
+    node_representations = {
+        'train': node_representations[:networkx_dataset_flatten_idxs[0]],
+        'test': node_representations[
+            networkx_dataset_flatten_idxs[0]:networkx_dataset_flatten_idxs[0] + networkx_dataset_flatten_idxs[1]],
+        'extrapolation': node_representations[-networkx_dataset_flatten_idxs[2]:],
+    }
+    writePickle(node_representations, filename=node_representations_filename)
     if args.verbose:
         print()
         print('Node representations:')
