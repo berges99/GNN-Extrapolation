@@ -15,7 +15,6 @@ from torch import nn
 from torch_geometric.data import DataLoader
 
 from utils.convert import fromNetworkx2Torch
-from utils.training import test_regression, test_classification
 from utils.io import readPickle, writePickle, parameterizedKeepOrderAction, booleanString
 
 
@@ -57,7 +56,7 @@ def readArguments():
     ##########
     # Network weight initialization specific arguments
     parser.add_argument(
-        '--init', type=str, default='uniform', choices=['uniform', 'xavier'],
+        '--init', type=str, default='uniform', choices=['default', 'uniform', 'xavier'],
         help='Type of initialization for the network.')
     parser.add_argument(
         '--bias', type=float, action=parameterizedKeepOrderAction('init_kwargs'),
@@ -89,11 +88,14 @@ def readArguments():
         '--blocks', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Number of GIN blocks to include in the model.')
     GIN.add_argument(
-        '--residual', type=booleanString, action=parameterizedKeepOrderAction('model_kwargs'),
+        '--residual', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Whether to add residual connections in the network.')
     GIN.add_argument(
         '--jk', type=booleanString, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Whether to add jumping knowledge in the network.')
+    GIN.add_argument(
+        '--pre_linear', type=booleanString, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Whether to apply an initial projection to the initial data to "hidden_dim".')
     # For the moment we only support teachers with GIN architecture
     return parser.parse_args()
 
@@ -125,15 +127,19 @@ def main():
         networkx_dataset['train'], initial_relabeling=args.initial_relabeling)
     torch_dataset_test = fromNetworkx2Torch(
         networkx_dataset['test'], initial_relabeling=args.initial_relabeling)
-    torch_dataset_extrapolation = fromNetworkx2Torch(
-        networkx_dataset['extrapolation'], initial_relabeling=args.initial_relabeling)
+    torch_dataset_extrapolation = [
+        fromNetworkx2Torch(k, initial_relabeling=args.initial_relabeling) 
+        for k in networkx_dataset['extrapolation']
+    ]
     # Init the data loaders
     torch_dataset_train_loader = DataLoader(torch_dataset_train, batch_size=1)
     torch_dataset_test_loader = DataLoader(torch_dataset_test, batch_size=1)
-    torch_dataset_extrapolation_loader = DataLoader(torch_dataset_extrapolation, batch_size=1)
-    # Import the model and init function
+    torch_dataset_extrapolation_loader = [DataLoader(k, batch_size=1) for k in torch_dataset_extrapolation]
+    # Import the model and init function and train/test functions
     Net = getattr(importlib.import_module(f'models.{args.model}'), 'Net')
     initWeights = getattr(importlib.import_module('utils.training'), f'initWeights{args.init.capitalize()}')
+    train = getattr(importlib.import_module('utils.training'), f'train_{args.setting}')
+    test = getattr(importlib.import_module('utils.training'), f'test_{args.setting}')
     # Resolve initialization parameters
     init_kwargs = {k: v for k, v in args.init_kwargs} if 'init_kwargs' in vars(args) else {}
     init_kwargs = resolveParameters(initWeights, init_kwargs)
@@ -159,14 +165,9 @@ def main():
         model.apply(partial(initWeights, **init_kwargs))
         # Make the model predict the regression outputs and save the results
         teacher_outputs = {}
-        if args.setting == 'regression':
-            teacher_outputs['train'] = test_regression(model, torch_dataset_train_loader, device)
-            teacher_outputs['test'] = test_regression(model, torch_dataset_test_loader, device)
-            teacher_outputs['extrapolation'] = test_regression(model, torch_dataset_extrapolation_loader, device)
-        else: #elif args.setting == 'classification':
-            teacher_outputs['train'] = test_classification(model, torch_dataset_train_loader, device)
-            teacher_outputs['test'] = test_classification(model, torch_dataset_test_loader, device)
-            teacher_outputs['extrapolation'] = test_classification(model, torch_dataset_extrapolation_loader, device)
+        teacher_outputs['train'] = test(model, torch_dataset_train_loader, device)
+        teacher_outputs['test'] = test(model, torch_dataset_test_loader, device)
+        teacher_outputs['extrapolation'] = [test(model, k, device) for k in torch_dataset_extrapolation_loader]
         if args.verbose:
             print()
             print('Teacher outputs:')

@@ -21,6 +21,9 @@ def readArguments():
         '-N', type=int, default=1_000, 
         help='Total number of graphs to generate.')
     parser.add_argument(
+        '--extra_size', type=float, nargs='+', default=[1.1],
+        help='Multiplication factor on the size "n" of the graphs.')
+    parser.add_argument(
         '--test', type=float, default=0.2,
         help='Extra proportion of test graphs to generate for testing.')
     parser.add_argument(
@@ -80,28 +83,35 @@ def generateGraphs(N, model, **kwargs):
             dataset['train'].append(nx.barabasi_albert_graph(
                 n=uniformSample(kwargs['n']), m=uniformSample(kwargs['m'])))
     # Generate approximately 20% of test data
-    for i in tqdm(range(int(0.2 * N))):
+    for i in tqdm(range(int(kwargs['test_size'] * N))):
         if model == 'erdos_renyi':
             dataset['test'].append(nx.erdos_renyi_graph(
                 n=uniformSample(kwargs['n']), p=uniformSample(kwargs['p'])))
         elif model == 'preferential_attachment':
             dataset['test'].append(nx.barabasi_albert_graph(
                 n=uniformSample(kwargs['n']), m=uniformSample(kwargs['m'])))
+    ##########
     # Generate approximately 20% of extrapolation data
-    for i in tqdm(range(int(0.2 * N))):
-        if model == 'erdos_renyi':
-            dataset['extrapolation'].append(nx.erdos_renyi_graph(
-                n=uniformSample((1.5 * np.array(kwargs['n'])).astype(int)), p=uniformSample(kwargs['p'])))
-        elif model == 'preferential_attachment':
-            dataset['extrapolation'].append(nx.barabasi_albert_graph(
-                n=uniformSample((1.5 * np.array(kwargs['n'])).astype(int)), m=uniformSample(kwargs['m'])))
+    dataset['extrapolation'] = [[] for _ in range(len(kwargs['extra_size']))]
+    for j in range(len(kwargs['extra_size'])):
+        for i in tqdm(range(int(kwargs['extrapolation_size'] * N))):
+            if model == 'erdos_renyi':
+                dataset['extrapolation'][j].append(nx.erdos_renyi_graph(
+                    n=uniformSample((kwargs['extra_size'][j] * np.array(kwargs['n'])).astype(int)), 
+                    p=uniformSample(kwargs['p'])))
+            elif model == 'preferential_attachment':
+                dataset['extrapolation'][j].append(nx.barabasi_albert_graph(
+                    n=uniformSample((kwargs['extra_size'][j] * np.array(kwargs['n'])).astype(int)),
+                    m=uniformSample(kwargs['m'])))
     return dataset
 
 
 def main():
     args = readArguments()
     if args.model == 'erdos_renyi':
-        dataset = generateGraphs(args.N, args.model, n=args.n, p=args.p)
+        dataset = generateGraphs(
+            args.N, args.model, n=args.n, p=args.p, 
+            test_size=args.test, extrapolation_size=args.extrapolation, extra_size=args.extra_size)
         filename = f"synthetic/{args.model}/N{args.N}_n{'-'.join(map(str, args.n))}" \
                    f"_p{'-'.join(map(str, args.p))}_{int(time.time())}/raw_networkx.pkl"
     else: #elif args.model == 'preferential_attachment':

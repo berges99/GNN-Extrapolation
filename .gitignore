@@ -6,3 +6,4 @@ data/datasets/
 src/*.txt
 **/teacher_outputs/*
 data/synthetic/
+docs/

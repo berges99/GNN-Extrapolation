@@ -61,9 +61,15 @@ def main():
     args = readArguments()
     networkx_dataset = readPickle(args.dataset_filename)
     # Flatten train + test + extrapolation data for computing the representations in one go
-    networkx_dataset_flatten_idxs = [len(networkx_dataset[k]) for k in ['train', 'test', 'extrapolation']]
-    networkx_dataset_flatten = [networkx_dataset[k] for k in ['train', 'test', 'extrapolation']]
+    networkx_dataset_flatten_idxs = [len(networkx_dataset[k]) for k in ['train', 'test']]
+    networkx_dataset_flatten = [networkx_dataset[k] for k in ['train', 'test']]
     networkx_dataset_flatten = [G for k in networkx_dataset_flatten for G in k]
+    # Append the extrapolation ones
+    networkx_dataset_flatten_idxs_extrapolation = [
+        len(networkx_dataset['extrapolation'][k]) for k in range(len(networkx_dataset['extrapolation']))]
+    networkx_dataset_flatten_extrapolation = [G for k in networkx_dataset['extrapolation'] for G in k]
+    networkx_dataset_flatten_idxs += networkx_dataset_flatten_idxs_extrapolation
+    networkx_dataset_flatten += networkx_dataset_flatten_extrapolation
     # Fromat the data in a convenient way
     if args.embedding_scheme == 'WL':
         if args.method == 'continuous':
@@ -86,12 +92,17 @@ def main():
         formatted_dataset, args.embedding_scheme, args.method, 
         parallel=False, **node_representations_kwargs
     )
-    # Reposition representations in {'train': [], 'test': [], 'extrapolation': []}
+    # Reposition representations in {'train': [], 'test': [], 'extrapolation': [[], [], ...]}
+    node_representations_extrapolation = []
+    offset = networkx_dataset_flatten_idxs[0] + networkx_dataset_flatten_idxs[1]
+    for k in networkx_dataset_flatten_idxs[2:]:
+        node_representations_extrapolation.append(node_representations[offset:offset + k])
+        offset += k
     node_representations = {
         'train': node_representations[:networkx_dataset_flatten_idxs[0]],
         'test': node_representations[
             networkx_dataset_flatten_idxs[0]:networkx_dataset_flatten_idxs[0] + networkx_dataset_flatten_idxs[1]],
-        'extrapolation': node_representations[-networkx_dataset_flatten_idxs[2]:],
+        'extrapolation': node_representations_extrapolation
     }
     writePickle(node_representations, filename=node_representations_filename)
     if args.verbose:

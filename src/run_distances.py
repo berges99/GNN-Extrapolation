@@ -87,11 +87,37 @@ def main():
         print(f'Distance matrix: (shape = [{dist_matrix.shape}])')
         print('-' * 30)
         print(dist_matrix)
-    # Compute the distance of test and extrapolation with themselves and w.r.t. the train data for the baseline
-    for k in ['test', 'extrapolation']:
-        node_representations_flatten = [item for sublist in node_representations[k] for item in sublist]
+    # Compute the distance of test with themselves and w.r.t. the train data for the baseline
+    ##########
+    # TEST
+    node_representations_flatten = [item for sublist in node_representations['test'] for item in sublist]
+    dist_matrix = computeDistMatrix(
+        node_representations_flatten, distance=args.distance, save_destination=f'{distances_filename}/test', 
+        test_idx=None, nystrom=args.nystrom, float_precision=args.float_precision, 
+        output_format=args.output_format, **distance_kwargs
+    )
+    if args.verbose:
+        print()
+        print(f'Distance matrix: (shape = [{dist_matrix.shape}])')
+        print('-' * 30)
+        print(dist_matrix)
+    node_representations_flatten = node_representations_train_flatten + node_representations_flatten
+    dist_matrix = computeDistMatrix(
+        node_representations_flatten, distance=args.distance, save_destination=f'{distances_filename}/test', 
+        test_idx=len(node_representations_train_flatten), nystrom=args.nystrom, float_precision=args.float_precision, 
+        output_format=args.output_format, **distance_kwargs
+    )
+    if args.verbose:
+        print()
+        print(f'Distance matrix: (shape = [{dist_matrix.shape}])')
+        print('-' * 30)
+        print(dist_matrix)
+    ##########
+    # EXTRAPOLATION
+    for i, k in enumerate(node_representations['extrapolation']):
+        node_representations_flatten = [item for sublist in k for item in sublist]
         dist_matrix = computeDistMatrix(
-            node_representations_flatten, distance=args.distance, save_destination=f'{distances_filename}/{k}', 
+            node_representations_flatten, distance=args.distance, save_destination=f'{distances_filename}/extrapolation/{i}', 
             test_idx=None, nystrom=args.nystrom, float_precision=args.float_precision, 
             output_format=args.output_format, **distance_kwargs
         )
@@ -102,7 +128,7 @@ def main():
             print(dist_matrix)
         node_representations_flatten = node_representations_train_flatten + node_representations_flatten
         dist_matrix = computeDistMatrix(
-            node_representations_flatten, distance=args.distance, save_destination=f'{distances_filename}/{k}', 
+            node_representations_flatten, distance=args.distance, save_destination=f'{distances_filename}/extrapolation/{i}', 
             test_idx=len(node_representations_train_flatten), nystrom=args.nystrom, float_precision=args.float_precision, 
             output_format=args.output_format, **distance_kwargs
         )

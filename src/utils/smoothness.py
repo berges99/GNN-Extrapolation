@@ -204,3 +204,52 @@ def computeSmoothness(D, L, f):
         return np.trace((f.T @ D @ f) - (f.T @ L[0] @ L[1] @ (L[0].T @ f)))
     else:
         return np.trace(f.T @ L[0] @ f)
+
+
+##########
+
+
+# TBD Adapt for huge matrices -> HDF5 form with pytables
+# TBD Adapt for Nystrom approximation
+def smoothTikhonov(L, gamma=1.0):
+    '''
+    Compute the Tikhonov regularization, with solution:
+
+                    f' = h(L) * f
+
+    where h(·) is defined as h(·) = 1 / (1 + gamma * L). 
+
+    Parameters:
+        - L: (np.ndarray) Graph combinatorial laplacian matrix (n x n) 
+        - gamma: (float) Hyper-parameter of the transformation.
+
+    Returns:
+        - (np.ndarray) The transformation for computing the smoothed input signal.
+    '''
+    return np.linalg.inv((1 + gamma * L))
+
+
+# TBD Adapt for huge matrices -> HDF5 form with pytables
+# TBD Adapt for Nystrom approximation
+def smoothHeat(L, tau=1.0):
+    '''
+    Compute the heat diffusion operator, with solution:
+
+                    f' = R * f
+
+    where R is defined as R = exp(-gamma * L) * f. 
+
+    Parameters:
+        - L: (np.ndarray) Graph combinatorial laplacian matrix (n x n)  
+        - tau: (float) Hyper-parameter of the transformation.
+
+    Returns:
+        - (np.ndarray) The transformation for computing the smoothed input signal.
+    '''
+    return sp.linalg.expm((-tau * L))
+
+
+def applySmoothing(T, f):
+    '''Auxiliary function that smoothes the input signal f with a transformation T.'''
+    f = np.array(f)[:, None]
+    return (T @ f).reshape(-1)

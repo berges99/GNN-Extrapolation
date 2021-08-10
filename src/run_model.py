@@ -8,21 +8,24 @@ import argparse
 import importlib
 import numpy as np
 import networkx as nx
+import multiprocessing
 
 from tqdm import tqdm
 from functools import partial
 from collections import defaultdict
+from joblib import Parallel, delayed
 
 from torch import nn
 import torch_geometric.transforms as T
 from torch_geometric.data import DataLoader
 
 from utils.convert import fromNetworkx2Torch, addLabels
+from utils.smoothness import computeW, computeL, applySmoothing
 from utils.io import readPickle, writePickle, parameterizedKeepOrderAction, booleanString
-from utils.training import train_regression, train_classification, test_regression, test_classification
 
 
 
+NUM_CORES = multiprocessing.cpu_count()
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
@@ -56,7 +59,7 @@ def readArguments():
     ##########
     # Training specific arguments
     parser.add_argument(
-        '--epochs', type=int, default=10,
+        '--epochs', type=int, default=10, # 10 -> 20 -> 50 -> 100 -> 200 -> 300
         help='Number of epochs of training for the chosen model.')
     parser.add_argument(
         '--lr', type=float, default=2e-04,
@@ -64,7 +67,7 @@ def readArguments():
     ##########
     # Network weight initialization specific arguments
     parser.add_argument(
-        '--init', type=str, default='uniform', choices=['uniform', 'xavier'],
+        '--init', type=str, default='uniform', choices=['default', 'uniform', 'xavier'],
         help='Type of initialization for the network.')
     parser.add_argument(
         '--bias', type=float, action=parameterizedKeepOrderAction('init_kwargs'),
@@ -92,19 +95,6 @@ def readArguments():
     Baseline.add_argument(
         '--method', type=str, required='Baseline' in sys.argv, choices=['baseline', 'knn'],
         help='Type of smoothing to apply to the baseline model.')
-    ###
-    Baseline.add_argument(
-        '--smoothing', type=str, choices=['tikhonov', 'heat_kernel', 'pagerank_kernel'],
-        help='Full relative path to the node representations to be used by the baseline method.')
-    Baseline.add_argument(
-        '--gamma', type=float, required='--smoothing tikhonov' in ' '.join(sys.argv),
-        action=parameterizedKeepOrderAction('smoothing_kwargs'),
-        help='Gamma parameter for the Tikhonov regularization.')
-    Baseline.add_argument(
-        '--tau', type=float, required='--smoothing heat_kernel' in ' '.join(sys.argv),
-        action=parameterizedKeepOrderAction('smoothing_kwargs'),
-        help='Tau parameter for the heat kernel.')
-    # TBD Implement the approximate pagerank kernel
     ##########
     GIN = model_subparser.add_parser('GIN', help='GIN model specific parser.')
     GIN.add_argument(
@@ -117,11 +107,14 @@ def readArguments():
         '--blocks', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Number of GIN blocks to include in the model.')
     GIN.add_argument(
-        '--residual', type=booleanString, action=parameterizedKeepOrderAction('model_kwargs'),
+        '--residual', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Whether to add residual connections in the network.')
     GIN.add_argument(
         '--jk', type=booleanString, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Whether to add jumping knowledge in the network.')
+    GIN.add_argument(
+        '--pre_linear', type=booleanString, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Whether to apply an initial projection to the initial data to "hidden_dim".')
     ###
     GCN = model_subparser.add_parser('GCN', help='GCN model specific parser.')
     GCN.add_argument(
@@ -134,11 +127,14 @@ def readArguments():
         '--blocks', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Number of GCN blocks to include in the model.')
     GCN.add_argument(
-        '--residual', type=booleanString, action=parameterizedKeepOrderAction('model_kwargs'),
+        '--residual', type=int, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Whether to add residual connections in the network.')
     GCN.add_argument(
         '--jk', type=booleanString, action=parameterizedKeepOrderAction('model_kwargs'),
         help='Whether to add jumping knowledge in the network.')
+    GCN.add_argument(
+        '--pre_linear', type=booleanString, action=parameterizedKeepOrderAction('model_kwargs'),
+        help='Whether to apply an initial projection to the initial data to "hidden_dim".')
     ###
     SIGN = model_subparser.add_parser('SIGN', help='SIGN model specific parser.')
     SIGN.add_argument(
@@ -215,6 +211,44 @@ def resolveTeacherOutputsFilenames(path):
     return teacher_outputs_filenames
 
 
+def auxiliaryFitModelParallel(Net, 
+                              model_kwargs, 
+                              initWeights, 
+                              init_kwargs,
+                              train,
+                              test, 
+                              device, 
+                              args,
+                              torch_dataset_train_loader, 
+                              torch_dataset_test_loader, 
+                              torch_dataset_extrapolation_loader):
+    '''Auxiliary function used for fitting models in parallel to speed up computations.'''
+    # Init the model
+    model = Net(**model_kwargs).to(device)
+    model.apply(partial(initWeights, **init_kwargs))
+    # Train during the specified amount of epochs
+    student_outputs = defaultdict(list)
+    student_outputs['train'].append(test(model, torch_dataset_train_loader, device))
+    student_outputs['test'].append(test(model, torch_dataset_test_loader, device))
+    student_outputs['extrapolation'] = [[(test(model, k, device))] for k in torch_dataset_extrapolation_loader]
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.94)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=0.5, patience=10, min_lr=1e-08)
+    for _ in range(args.epochs):
+        train(model, optimizer, scheduler, torch_dataset_train_loader, device)
+        student_outputs['train'].append(test(model, torch_dataset_train_loader, device))
+        student_outputs['test'].append(test(model, torch_dataset_test_loader, device))
+        for i in range(len(torch_dataset_extrapolation_loader)):
+            student_outputs['extrapolation'][i].append(test(model, torch_dataset_extrapolation_loader[i], device))
+    if args.verbose:
+        print()
+        print('Student outputs:')
+        print('-' * 30)
+        print(student_outputs)
+    return student_outputs, model
+
+
 def main():
     args = readArguments()
     # Resolve regression vs classification setting
@@ -224,16 +258,11 @@ def main():
     if args.model == 'Baseline':
         # Import the model
         Baseline = getattr(importlib.import_module(f'models.{args.model}'), 'Baseline')
-        # Resolve smoothing keyword arguments
-        smoothing_kwargs = {k: v for k, v in args.smoothing_kwargs} if 'smoothing_kwargs' in vars(args) else {}
+        # # Resolve smoothing keyword arguments
+        # smoothing_kwargs = {k: v for k, v in args.smoothing_kwargs} if 'smoothing_kwargs' in vars(args) else {}
         # Resolve storage filename
         student_outputs_filename_suffix = \
-            f"{'/'.join(args.dist_matrix_filename.split('/')[-8:]).replace('/', '__').rstrip('.npz')}" \
-            f"__{args.method}_s{str(args.smoothing).capitalize()}"
-        if smoothing_kwargs:
-            student_outputs_filename_suffix = \
-                f"{student_outputs_filename_suffix}_{'_'.join([k.split('_')[0] + str(v).capitalize() for k, v in smoothing_kwargs.items()])}"
-        student_outputs_filename_suffix = f"{student_outputs_filename_suffix}.pkl"
+            f"{'/'.join(args.dist_matrix_filename.split('/')[-8:]).replace('/', '__').rstrip('.npz')}__{args.method}.pkl"
         # Read the distance matrices. Example of path:
         # ../data/synthetic/erdos_renyi/N100_n100_p0.1_1625478135/node_representations/WL/hashing/d3_iOnes/dist_matrices/hamming/sMaxdegree/train/full64.npz
         dist_matrix_train = np.load(args.dist_matrix_filename)
@@ -242,43 +271,44 @@ def main():
         # Read the test and extrapolation matrices (ensure to take the (n x m) matrix!)
         dist_matrix_test = np.load(
             f"{'/'.join(args.dist_matrix_filename.split('/')[:-2])}/test/full64_test.npz")['dist_matrix']
-        dist_matrix_extrapolation = np.load(
-            f"{'/'.join(args.dist_matrix_filename.split('/')[:-2])}/extrapolation/full64_test.npz")['dist_matrix']
+        dist_matrix_extrapolation = [
+            np.load(f"{'/'.join(args.dist_matrix_filename.split('/')[:-2])}/extrapolation/{k}/full64_test.npz")['dist_matrix']
+            for k in sorted(os.listdir(f"{'/'.join(args.dist_matrix_filename.split('/')[:-2])}/extrapolation")) if k.isdigit()
+        ]
         # Read the teacher outputs of the dataset (iterate through folder if necessary)
         for teacher_outputs_filename in tqdm(resolveTeacherOutputsFilenames(args.teacher_outputs_filename)):
             # Resolve storage filename
             student_outputs_filename = \
                 f"{'/'.join(teacher_outputs_filename.split('/')[:-1])}/student_outputs/{args.model}/{student_outputs_filename_suffix}"
-            # Read the teacher outputs (train, test, extrapolation)
+            # Read the teacher outputs (hence we only read train because are the only ones we use for prediction)
             teacher_outputs_train = readPickle(teacher_outputs_filename)['train']
             teacher_outputs_train_flatten = np.array([item for sublist in teacher_outputs_train for item in sublist])
-            # Predict with the baseline (predict on all the training set) -> list(range(len(node_representations))) 
-            # (train, test, extrapolation)
+            # Predict with the baseline (train, test, extrapolation)
             student_outputs = {}
             student_outputs['train'] = [Baseline(
                 teacher_outputs_train_flatten, dist_matrix_train, idxs=idxs, 
                 num_outputs=1 if args.setting == 'regression' else args.classes,
-                method=args.method, smoothing=None, **smoothing_kwargs #smoothing=args.smoothing
+                method=args.method #, smoothing=None, **smoothing_kwargs
             )]
             student_outputs['test'] = [Baseline(
                 teacher_outputs_train_flatten, dist_matrix_test, idxs=None, 
                 num_outputs=1 if args.setting == 'regression' else args.classes,
-                method=args.method, smoothing=None, **smoothing_kwargs #smoothing=args.smoothing
+                method=args.method #, smoothing=None, **smoothing_kwargs
             )]
-            student_outputs['extrapolation'] = [Baseline(
-                teacher_outputs_train_flatten, dist_matrix_extrapolation, idxs=None, 
-                num_outputs=1 if args.setting == 'regression' else args.classes,
-                method=args.method, smoothing=None, **smoothing_kwargs #smoothing=args.smoothing
-            )]
+            student_outputs['extrapolation'] = [
+                [Baseline(teacher_outputs_train_flatten, k, idxs=None, 
+                          num_outputs=1 if args.setting == 'regression' else args.classes,
+                          method=args.method)] #, smoothing=None, **smoothing_kwargs
+                for k in dist_matrix_extrapolation
+            ]
             if args.verbose:
                 print()
                 print('Student outputs:')
                 print('-' * 30)
                 print(student_outputs)
-                print(student_outputs_filename)
             writePickle(student_outputs, filename=student_outputs_filename)
     # If the model is a GNN
-    else: #elif args.model != 'Baseline':
+    else:
         # Read the dataset and convert it to torch_geometric.data
         networkx_dataset = readPickle(args.dataset_filename)
         # Convert it into pytorch data and split (train, test, extrapolation)
@@ -286,8 +316,13 @@ def main():
             networkx_dataset['train'], initial_relabeling=args.initial_relabeling)
         torch_dataset_test = fromNetworkx2Torch(
             networkx_dataset['test'], initial_relabeling=args.initial_relabeling)
-        torch_dataset_extrapolation = fromNetworkx2Torch(
-            networkx_dataset['extrapolation'], initial_relabeling=args.initial_relabeling)
+        torch_dataset_extrapolation = [
+            fromNetworkx2Torch(k, initial_relabeling=args.initial_relabeling) 
+            for k in networkx_dataset['extrapolation']
+        ]
+        # Import adequate train/test functions
+        train = getattr(importlib.import_module('utils.training'), f'train_{args.setting}')
+        test = getattr(importlib.import_module('utils.training'), f'test_{args.setting}')
         # Resolve model and init kwargs and import the necessary module
         initWeights = getattr(importlib.import_module('utils.training'), f'initWeights{args.init.capitalize()}')
         init_kwargs = {k: v for k, v in args.init_kwargs} if 'init_kwargs' in vars(args) else {}
@@ -319,48 +354,34 @@ def main():
                         normalization=model_kwargs['normalization'], is_undirected=True)])
                 torch_dataset_train = [transform(G) for G in torch_dataset_train]
                 torch_dataset_test = [transform(G) for G in torch_dataset_test]
-                torch_dataset_extrapolation = [transform(G) for G in torch_dataset_extrapolation]
+                for i in range(len(torch_dataset_extrapolation)):
+                    torch_dataset_extrapolation[i] = [transform(G) for G in torch_dataset_extrapolation[i]]
             # Init the data loaders
             torch_dataset_train_loader = DataLoader(torch_dataset_train, batch_size=1)
             torch_dataset_test_loader = DataLoader(torch_dataset_test, batch_size=1)
-            torch_dataset_extrapolation_loader = DataLoader(torch_dataset_extrapolation, batch_size=1) 
+            torch_dataset_extrapolation_loader = [DataLoader(k, batch_size=1) for k in torch_dataset_extrapolation]
             # Produce as many results with as many random initializations as indicated
-            for _ in range(args.num_iterations):
-                # Init the model
-                model = Net(**model_kwargs).to(device)
-                model.apply(partial(initWeights, **init_kwargs))
-                # Train during the specified amount of epochs
-                student_outputs = defaultdict(list)
-                if args.setting == 'regression':
-                    student_outputs['train'].append(test_regression(model, torch_dataset_train_loader, device))
-                    student_outputs['test'].append(test_regression(model, torch_dataset_test_loader, device))
-                    student_outputs['extrapolation'].append(test_regression(model, torch_dataset_extrapolation_loader, device))
-                    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-                    for _ in range(args.epochs):
-                        train_regression(model, optimizer, torch_dataset_train_loader, device)
-                        student_outputs['train'].append(test_regression(model, torch_dataset_train_loader, device))
-                        student_outputs['test'].append(test_regression(model, torch_dataset_test_loader, device))
-                        student_outputs['extrapolation'].append(test_regression(model, torch_dataset_extrapolation_loader, device))
-                else: #elif args.setting == 'classification':
-                    student_outputs['train'].append(test_classification(model, torch_dataset_train_loader, device))
-                    student_outputs['test'].append(test_classification(model, torch_dataset_test_loader, device))
-                    student_outputs['extrapolation'].append(test_classification(model, torch_dataset_extrapolation_loader, device))
-                    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-                    for _ in range(args.epochs):
-                        train_classification(model, optimizer, torch_dataset_train_loader, device)
-                        student_outputs['train'].append(test_classification(model, torch_dataset_train_loader, device))
-                        student_outputs['test'].append(test_classification(model, torch_dataset_test_loader, device))
-                        student_outputs['extrapolation'].append(test_classification(model, torch_dataset_extrapolation_loader, device))
-                if args.verbose:
-                    print()
-                    print('Student outputs:')
-                    print('-' * 30)
-                    print(student_outputs)
+            student_outputs = \
+                (Parallel(n_jobs=NUM_CORES)
+                         (delayed(auxiliaryFitModelParallel)(Net, 
+                                                             model_kwargs, 
+                                                             initWeights, 
+                                                             init_kwargs,
+                                                             train,
+                                                             test,
+                                                             device, 
+                                                             args, 
+                                                             torch_dataset_train_loader, 
+                                                             torch_dataset_test_loader, 
+                                                             torch_dataset_extrapolation_loader) 
+                         for _ in range(args.num_iterations)))
+            # Write results into memory
+            for student_output, model in student_outputs:    
                 # Save the student outputs and the trained model
                 student_outputs_filename_prefix_ = f"{student_outputs_filename_prefix}/{int(time.time() * 1000)}"
                 student_outputs_filename = f"{student_outputs_filename_prefix_}/student_outputs.pkl"
                 student_outputs_filename_model = f"{student_outputs_filename_prefix_}/model.pt"
-                writePickle(student_outputs, filename=student_outputs_filename)
+                writePickle(student_output, filename=student_outputs_filename)
                 torch.save(model.state_dict(), student_outputs_filename_model)
     ###               
     return args.teacher_outputs_filename if args.save_file_destination else ''

@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 
 from torch import nn
 
@@ -23,18 +24,24 @@ def initWeightsXavier(m, bias=0.0, gain=1.0):
         m.bias.data.fill_(bias)
 
 
+def initWeightsDefault(m):
+    '''Abstract function for system robustness with default initializations (does nothing).'''
+    pass
+
+
 ##############
 # REGRESSION #
 ##############
 
 
-def train_regression(model, optimizer, loader, device):
+def train_regression(model, optimizer, scheduler, loader, device):
     '''
     Student train function.
 
     Parameters:
         - model: (nn.Module) Model to train on the given data.
         - optimizer: (torch.optim) Optimizer for training.
+        - scheduler
         - loader: (torch_geometric.data.dataloader.DataLoader) Torch data loader for training.
         - device: (torch.device) Destination device to perform the computations.
         
@@ -45,7 +52,8 @@ def train_regression(model, optimizer, loader, device):
     # print('-' * 30)
     # print('Init training...')
     model.train()
-    loss = nn.MSELoss()
+    loss = nn.MSELoss() # reduction='mean' -> the loss is the average SE per graph
+    losses = []
     for data in loader:
         # Handle pre-transforms of the SIGN network
         if 'x1' in data:
@@ -58,8 +66,13 @@ def train_regression(model, optimizer, loader, device):
             data = data.to(device)
             optimizer.zero_grad()
             output = loss(model(data), data.y)
+        losses.append(float(output.detach().numpy()))
         output.backward()
         optimizer.step()
+    # Onche the epoch is completed, perform the update of the scheduler
+    # scheduler.step()
+    # Reduce on plateau scheduler assumed
+    scheduler.step(np.mean(np.array(losses)))
 
 
 def test_regression(model, loader, device):
@@ -99,13 +112,14 @@ def test_regression(model, loader, device):
 
 
 # TBD
-def train_classification(model, optimizer, loader, device):
+def train_classification(model, optimizer, scheduler, loader, device):
     '''
     Student train function.
 
     Parameters:
         - model: (nn.Module) Model to train on the given data.
         - optimizer: (torch.optim) Optimizer for training.
+        - scheduler
         - loader: (torch_geometric.data.dataloader.DataLoader) Torch data loader for training.
         - device: (torch.device) Destination device to perform the computations.
         
